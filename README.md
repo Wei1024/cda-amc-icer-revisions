@@ -21,7 +21,8 @@ with recommendations from 2020 to 2025**, and asks:
 
 | Stage | State |
 |---|---|
-| Cohort, document download, text excerpts | Done (this repo) |
+| Cohort, document download | Done (this repo) |
+| Page selection | Being designed. The LLM will read the selected PDF pages directly, so tables keep their layout. This replaces the current text excerpts |
 | LLM extraction and adjudication | Being designed; specified in [docs/codebook.md](docs/codebook.md) |
 | Validation, modelling, write-up | Not started |
 
@@ -47,6 +48,9 @@ uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts
 uv run icer all         # all three in order
 ```
 
+`excerpts` is the text-based step from the pilot. It flattens tables into plain text, so it will be replaced by
+page selection, which keeps the relevant PDF pages for the LLM to read as they are.
+
 `download` and `excerpts` accept `--projects SR0616-000 PC0238-000 ...` to run on a subset. Re-runs skip
 PDFs and text that already exist. Set `ICER_DATA_DIR` to keep generated data outside the repo. See
 [data/README.md](data/README.md) for every file.
@@ -64,7 +68,7 @@ src/icer_revisions/
   config.py            paths and cohort definition
   listing.py           parse the export, build the cohort
   documents.py         pick, download and content-check each review's documents
-  excerpts.py          PDF to text, cue-based excerpting
+  excerpts.py          PDF to text, cue-based excerpting (to be replaced by page selection)
   cli.py               the `icer` command
 tests/
 ```
