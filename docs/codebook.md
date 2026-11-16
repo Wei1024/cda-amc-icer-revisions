@@ -75,7 +75,10 @@ The contribution of each category is computed afterwards in code, never by the L
 | ~~pct_qaly_after_trial~~ | — | [D] | 27/60, mostly agency-side | **Dropped as a feature** because of leakage and missingness. It may be kept as a descriptive variable if taken from the sponsor's own table |
 | ~~perspective_societal_base~~ | — | [D] | 0 variation | **Dropped** |
 
-## 6. Price reduction (secondary target)
+## 6. Price reduction (part of the revision question)
+
+The price cut is not a separate prediction target. It translates the revision into price terms: how much of
+the recommended cut the sponsor's own ICER already implied, and how much the agency's revision added.
 
 | field | definition |
 |---|---|
@@ -84,7 +87,14 @@ The contribution of each category is computed afterwards in code, never by the L
 | price_reduction_status | `pct`, `band`, `not_needed`, `no_pct_specified`, `not_achievable`, `not_reported` |
 | wtp_threshold | Usually 50000; record it if different (e.g. 100000 in early 2020) |
 
-**Bins for modelling:** <50 / 50–75 / ≥75%, aligned with CDA-AMC's band cut-points.
+**Price-cut split (computed in code, never by the LLM).** With threshold *T*:
+- cut implied by the sponsor's ICER = max(0, 1 − *T* / sponsor_icer)
+- cut implied by the agency's ICER = max(0, 1 − *T* / agency_icer)
+- revision's part = agency-implied cut − sponsor-implied cut
+
+This treats the drug price as the whole incremental cost, so it is an approximation. Report it next to
+`price_reduction_pct`, and use the gap between the two as a check (see §8). For descriptive tables, group cuts
+as <50 / 50–75 / ≥75%, which matches CDA-AMC's band cut-points.
 
 ## 7. Every extracted record also carries
 - `evidence`: up to 4 verbatim quotes of 30 words or fewer, for the non-obvious fields.

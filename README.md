@@ -9,12 +9,12 @@ Earlier studies tallied these gaps by hand, over short windows and one review st
 uses LLM extraction with validation to cover **all 404 CDA-AMC oncology and non-oncology reimbursement reviews
 with recommendations from 2020 to 2025**, and asks:
 
-1. **Revision.** How large is log(agency ICER / sponsor ICER), and which features of the submission, known
-   before the decision, predict it?
-2. **Price reduction.** How well can the recommended price cut be predicted (in bands of <50%, 50–75% and ≥75%)?
-3. **Mechanism.** How much of each revision comes from incremental costs versus QALYs, and from each type
+1. **Revision.** How large is log(agency ICER / sponsor ICER), which features of the submission, known
+   before the decision, predict it, and how much of the recommended price cut does it account for? Each cut
+   is split into the part the sponsor's own ICER already implies and the part the agency's revision adds.
+2. **Mechanism.** How much of each revision comes from incremental costs versus QALYs, and from each type
    of change in the agency's stepwise reanalysis (survival extrapolation, utilities, drug costs, …)?
-4. **Method.** How reliable is LLM extraction from HTA reports, measured by agreement between two independent
+3. **Method.** How reliable is LLM extraction from HTA reports, measured by agreement between two independent
    extractors and a set of automatic consistency checks?
 
 ## Status
@@ -26,7 +26,9 @@ with recommendations from 2020 to 2025**, and asks:
 | Validation, modelling, write-up | Not started |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
-median ratio of 1.9× agrees with published estimates ([docs/pilot-findings.md](docs/pilot-findings.md)).
+median ratio of 1.9× agrees with published estimates. In a typical review the sponsor's own ICER already
+implied most of the price cut, and the agency's revision added about 13 percentage points
+([docs/pilot-findings.md](docs/pilot-findings.md)).
 
 ## Setup
 

@@ -1,6 +1,8 @@
 # EDA feasibility: CDA-AMC ICER revision and price reduction (2020–2025)
 
 > **Pilot record.** This summarises the exploration run that preceded this repository. Script and data paths below (`scripts/0*_*.py`, `data/llm/`, the `.png` figures) refer to that exploration workspace, not to this repo. The cohort counts are listing rows: 407 rows are 404 unique reviews (190 PC, 214 SR) once three duplicated oncology rows are merged.
+>
+> **Framing change (2026-11-15).** The pilot treated the price cut as a second prediction target (Q2 below). The project has since folded it into the revision question: each cut is split into the part the sponsor's own ICER implies and the part the agency's revision adds. See [Price-cut split](#price-cut-split-added-2026-11-15) at the end.
 
 ## Scope and method
 - **Universe.** The CDA-AMC reimbursement review export has 1,601 rows; 530 have a recommendation dated 2020–2025. Of those, 407 are full drug reviews: 214 SR (non-oncology, CDEC) and 193 PC (oncology, pERC). Provisional funding algorithms (PH) and other project types were excluded because they carry no sponsor ICER.
@@ -35,7 +37,7 @@
   - Multiple populations.
   - "No base case, headline scenario" reviews.
 
-## Q2: price reduction
+## Q2: price reduction (now part of Q1)
 - **47 of 60 (78%) report a specific %.** Projected, that is about 320 of 407.
   - 3 need no reduction, 4 require a reduction with no figure given, 1 is "not achievable", and 5 are other or not reported.
   - 21 of the 47 are lower bounds ("at least X%"), which is fine for binning.
@@ -116,3 +118,17 @@ Scripts: `scripts/06_feature_excerpts.py`, `scripts/feature_instructions.md`, `s
 3. Define resubmission precisely: an earlier review of the same indication, not a reconsideration of a draft.
 4. Add rules for co-primary endpoints, for placebo-plus-backbone trials (record them as head-to-head), and for trial duration vs median follow-up.
 5. Expand the stepwise extraction from "top change only" to every step with its ICER, so each type of change gets a contribution to the revision.
+
+## Price-cut split (added 2026-11-15)
+Computed from `data/sample_extracted.csv` in the exploration workspace, on the 33 reviews with a sponsor ICER, an agency ICER and a stated % cut. Each implied cut is max(0, 1 − threshold / ICER), as defined in [codebook §6](codebook.md#6-price-reduction-part-of-the-revision-question).
+
+- **The sponsor's own ICER already implied most of the cut.**
+  - The median implied cut at the sponsor's ICER is 65%; at the agency's ICER it is 82%. The median reported cut is 75%.
+  - The revision added a median of 13 percentage points, about 18% of the cut.
+- **The revision's part is what tracks the ratio.** Its Spearman correlation with log(ratio) is 0.84, while the reported cut's correlation with log(ratio) was −0.11 (Q2 above). The ratio matters for the cut, but differences in ICER level between drugs hide it.
+- **Near the threshold, the revision is the whole story.**
+  - In 8 of 33 reviews the sponsor's ICER implied essentially no cut (under 1%), so nearly the whole cut came from the revision.
+  - In 12 of 33 the revision accounts for at least half of the implied cut.
+- **The approximation is fair but rough.**
+  - The agency-implied cut is within 4 points of the reported cut in the median review, with Spearman 0.75.
+  - A few reviews diverge by 40+ points (SR0767, SR0781), probably because the drug is only part of the incremental cost or the cut refers to another comparator. These are worth checking in the full run.

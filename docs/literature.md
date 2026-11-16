@@ -27,3 +27,4 @@ Searched 2026-11-12. Items marked (unverified) came from a fetch tool's summary 
 2. **No one models the revision ratio as an outcome** or tests which submission characteristics predict it. Two papers explicitly call this future work.
 3. Critique *frequencies* are tallied, but **no one quantifies each issue's contribution to the ICER**. CDA-AMC's stepwise reanalysis tables make this possible.
 4. ML/LLM prediction work targets the recommendation category, which is about 90% "reimburse with conditions" and makes a weak target. Continuous economic outcomes are untouched.
+5. Price reductions are described (Fashami 2024; Balijepalli 2024 links them to the revised ICER only loosely), but none of the studies above separates **how much of the cut the sponsor's own ICER already implied from how much the agency's revision added**.
