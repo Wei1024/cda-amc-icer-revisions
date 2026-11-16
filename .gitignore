@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Generated data: rebuild with `uv run icer all`. Only the listing export is versioned.
+data/*
+!data/raw/
+!data/README.md
+*.part

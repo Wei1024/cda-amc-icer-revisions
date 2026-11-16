@@ -1,1 +1,79 @@
-# cda-amc-icer-revisions
+# How much does CDA-AMC revise sponsor ICERs, and why?
+
+Drug manufacturers seeking public reimbursement in Canada submit a cost-effectiveness model to Canada's Drug
+Agency (CDA-AMC, formerly CADTH). The agency critiques the model and reports its own base-case incremental
+cost-effectiveness ratio (ICER), which is typically about twice the sponsor's. That gap drives the price reduction
+the agency recommends.
+
+Earlier studies tallied these gaps by hand, over short windows and one review stream at a time. This project
+uses LLM extraction with validation to cover **all 404 CDA-AMC oncology and non-oncology reimbursement reviews
+with recommendations from 2020 to 2025**, and asks:
+
+1. **Revision.** How large is log(agency ICER / sponsor ICER), and which features of the submission, known
+   before the decision, predict it?
+2. **Price reduction.** How well can the recommended price cut be predicted (in bands of <50%, 50–75% and ≥75%)?
+3. **Mechanism.** How much of each revision comes from incremental costs versus QALYs, and from each type
+   of change in the agency's stepwise reanalysis (survival extrapolation, utilities, drug costs, …)?
+4. **Method.** How reliable is LLM extraction from HTA reports, measured by agreement between two independent
+   extractors and a set of automatic consistency checks?
+
+## Status
+
+| Stage | State |
+|---|---|
+| Cohort, document download, text excerpts | Done (this repo) |
+| LLM extraction and adjudication | Being designed; specified in [docs/codebook.md](docs/codebook.md) |
+| Validation, modelling, write-up | Not started |
+
+A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
+median ratio of 1.9× agrees with published estimates ([docs/pilot-findings.md](docs/pilot-findings.md)).
+
+## Setup
+
+Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 if needed).
+
+```bash
+uv sync
+```
+
+## Pipeline
+
+```bash
+uv run icer cohort      # parse the listing export -> data/interim/cohort.csv (404 reviews)
+uv run icer download    # Recommendation + economic report PDFs -> data/pdfs/ (~800 files, ~3 GB), content-checked
+uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/
+uv run icer all         # all three in order
+```
+
+`download` and `excerpts` accept `--projects SR0616-000 PC0238-000 ...` to run on a subset. Re-runs skip
+PDFs and text that already exist. Set `ICER_DATA_DIR` to keep generated data outside the repo. See
+[data/README.md](data/README.md) for every file.
+
+## Repository layout
+
+```
+docs/
+  codebook.md          extraction spec: target, decision rules, features, validation plan
+  data-sources.md      where documents come from, how two per review are chosen and checked
+  pilot-findings.md    results of the 60-review feasibility pilot
+  literature.md        prior work and the gap this project fills
+data/raw/              CDA-AMC listing export (the only versioned data)
+src/icer_revisions/
+  config.py            paths and cohort definition
+  listing.py           parse the export, build the cohort
+  documents.py         pick, download and content-check each review's documents
+  excerpts.py          PDF to text, cue-based excerpting
+  cli.py               the `icer` command
+tests/
+```
+
+## Development
+
+```bash
+uv run pytest
+uv run ruff check . && uv run ruff format --check .
+```
+
+## License
+
+Code: MIT. CDA-AMC documents are © Canada's Drug Agency and are downloaded from cda-amc.ca, not redistributed here.
