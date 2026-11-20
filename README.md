@@ -9,13 +9,17 @@ Earlier studies tallied these gaps by hand, over short windows and one review st
 uses LLM extraction with validation to cover **all 404 CDA-AMC oncology and non-oncology reimbursement reviews
 with recommendations from 2020 to 2025**, and asks:
 
-1. **Revision.** How large is log(agency ICER / sponsor ICER), which features of the submission, known
-   before the decision, predict it, and how much of the recommended price cut does it account for? Each cut
-   is split into the part the sponsor's own ICER already implies and the part the agency's revision adds.
+1. **Revision.** How large is log(agency ICER / sponsor ICER), what kind of submission gets a larger one
+   (features known before the decision), and how much of the recommended price cut does it account for? Each
+   cut is split into the part the sponsor's own ICER already implies and the part the agency's revision adds.
 2. **Mechanism.** How much of each revision comes from incremental costs versus QALYs, and from each type
    of change in the agency's stepwise reanalysis (survival extrapolation, utilities, drug costs, …)?
 3. **Method.** How reliable is LLM extraction from HTA reports, measured by agreement between two independent
    extractors and a set of automatic consistency checks?
+
+LLMs are used to build the dataset. The analysis itself is statistical: regression with effect sizes and
+confidence intervals, fixed in advance. Cross-validated prediction measures how much the features explain, and a
+tree-based model checks for missed interactions ([analysis plan](docs/codebook.md#8-analysis-plan-fixed-before-the-outcomes-are-seen)).
 
 ## Status
 
@@ -24,7 +28,7 @@ with recommendations from 2020 to 2025**, and asks:
 | Cohort, document download | Done (this repo) |
 | Page selection | Being designed. The LLM will read the selected PDF pages directly, so tables keep their layout. This replaces the current text excerpts |
 | LLM extraction and adjudication | Being designed; specified in [docs/codebook.md](docs/codebook.md) |
-| Validation, modelling, write-up | Not started |
+| Validation, statistical analysis, write-up | Not started; analysis plan in [docs/codebook.md](docs/codebook.md) §8 |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
 median ratio of 1.9× agrees with published estimates. In a typical review the sponsor's own ICER already

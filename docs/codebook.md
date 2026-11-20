@@ -148,7 +148,7 @@ the recommended cut the sponsor's own ICER already implied, and how much the age
 - revision's part = agency-implied cut − sponsor-implied cut
 
 This treats the drug price as the whole incremental cost, so it is an approximation. Report it next to
-`price_reduction_pct`, and use the gap between the two as a check (see §8). For descriptive tables, group cuts
+`price_reduction_pct`, and use the gap between the two as a check (see §9). For descriptive tables, group cuts
 as <50 / 50–75 / ≥75%, which matches CDA-AMC's band cut-points.
 
 ## 7. Every extracted record also carries
@@ -156,7 +156,47 @@ as <50 / 50–75 / ≥75%, which matches CDA-AMC's band cut-points.
 - `notes`: judgement calls.
 - `extractor_id`: the model and prompt version.
 
-## 8. Validation (no full hand-labelled set; see the limitations)
+## 8. Analysis plan (fixed before the outcomes are seen)
+
+The main analysis is statistical: the aim is to explain which kinds of submission get larger revisions, with
+effect sizes and uncertainty. Prediction is a check on how much those features explain, not the goal. Results are
+associations, not causal effects.
+
+**Descriptive (Q1 size, Q2 mechanism)**
+- Median revision ratio with IQR and a bootstrap 95% CI, overall and by stream and year.
+- Counts for every `ratio_status`, so excluded reviews stay visible.
+- Price-cut split (§6) and the cost vs QALY decomposition (§3), as medians and distributions.
+- Stepwise category contributions (§4).
+
+**Main model (Q1 drivers)**
+- Linear regression of log(ratio) on the §5 features, chosen before the outcomes are seen. Each coefficient is
+  reported as exp(β): the ratio of typical revisions with and without the feature, with a 95% CI.
+- About one parameter per 10 reviews: categories with fewer than 10 reviews are merged before fitting.
+- Year as a covariate. Standard errors clustered by drug (the same molecule can appear in several reviews).
+- Fitted with and without `log_sponsor_icer` (regression to the mean, §5).
+
+**Secondary models**
+- Logistic regression for `large_revision` and `crossed_threshold` (§2), reported as odds ratios with 95% CIs.
+  These include the `sponsor_dominant` reviews.
+
+**Missing data**
+- Multiple imputation by chained equations (20 imputations, the outcome included in the imputation model).
+  Complete-case analysis as a sensitivity check.
+
+**How much is explained**
+- Repeated 10-fold cross-validation (20 repeats) of the main model. Out-of-sample R² and median absolute
+  error on the log scale, against a baseline that always predicts the median.
+- A random forest or gradient-boosting model in the same cross-validation, as a check for nonlinearity and
+  interactions. If it clearly beats the regression, the interactions it uses are explored; it does not replace
+  the main model.
+
+**Sensitivity analyses**
+- Drop rows with `icer_type_mismatch`, `icer_basis = sequential`, `range_only`, or any failed automatic check (§9).
+- Use `agency_icer_headline` in place of `agency_icer` where they differ.
+
+Anything not listed here is reported as exploratory.
+
+## 9. Validation (no full hand-labelled set; see the limitations)
 0. Before the full run: the target-precision check at the end of §2.
 1. Two independent extraction passes, ideally with different models. Report agreement per field: Cohen's κ for categorical fields, exact match within ±1% for numbers.
 2. A third LLM adjudicates only the disagreements, with the evidence and source passages. Outcome: pick A, pick B, corrected value, or `ambiguous`.
