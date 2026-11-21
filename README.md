@@ -58,7 +58,7 @@ uv run icer download    # Recommendation, economic and (2020-21) clinical report
 uv run icer pages       # selected pages -> data/pages/<project>/{rec,pe,clin}.pdf + a page map
 uv run icer all         # cohort, download and pages in order
 uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/ (temporary, not in `all`)
-uv run icer extract --extractor a --projects PC0195-000   # LLM extraction (calls the API, costs money)
+uv run icer extract --extractor haiku-test --projects PC0195-000   # LLM extraction via OpenRouter (costs money)
 ```
 
 `excerpts` is the text-based step from the pilot. It flattens tables into plain text, so `pages` replaces it: the
@@ -87,7 +87,7 @@ src/icer_revisions/
   pages.py             page selection: the TARGETS rules table, one PDF per document
   excerpts.py          PDF to text, cue-based excerpting (temporary; replaced by pages.py)
   schema.py            the extraction output (pydantic), from docs/extraction-spec.md §2
-  extract.py           runs one LLM extractor on each review's selected pages
+  extract.py           runs one LLM extractor (via OpenRouter) on each review's selected pages
   cli.py               the `icer` command
 tests/
 ```
