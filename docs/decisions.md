@@ -23,6 +23,7 @@ Each entry: what was decided, why, and what it replaced.
 | [D13](#d13-codebook-split-into-three-files) | 2026-11-20 | Codebook split into three files |
 | [D14](#d14-clinical-reports-for-economic-only-reviews) | 2026-11-20 | Clinical reports added for economic-only reviews |
 | [D15](#d15-rare-disease-from-a-prevalence-figure) | 2026-11-20 | Rare disease set in code from a prevalence figure |
+| [D16](#d16-page-selection-by-bookmarked-section) | 2026-11-20 | Page selection by bookmarked section, with cue pages added |
 
 Not decided yet: [ideas on hold](#ideas-on-hold).
 
@@ -137,6 +138,17 @@ and applying one threshold in code gives the same definition for every review.
 **Role in the analysis:** the only evidence is one descriptive split (Balijepalli 2024: about 2.5× for rare
 diseases vs 2.3× overall), so it is not a hypothesis. It is kept as a control, because rare diseases tend to
 have the weaker evidence that H1–H3 test.
+
+### D16. Page selection by bookmarked section
+**Decided:** select pages by document section, using the PDFs' bookmarks, and add a few pages by text cue
+([extraction-spec.md](extraction-spec.md) §1.1). Short economic reports are kept whole.
+**Considered:** scoring every page by cues alone (the pilot's excerpt logic). Keeping pages with three or more
+cues gives about 16 pages per review, but it cannot tell an ICER in the economic review from one in a budget
+impact appendix or a table of contents, and it splits tables across pages.
+**Why:** from 2022, 96–100% of combined reports have a "Pharmacoeconomic Review" bookmark, and the reports are laid
+out the same way, so sections are a reliable map. Measured on all 883 documents, the rules keep every $/QALY page,
+stepped-analysis table, included-studies table and follow-up page that the cues find, at a median of 56 pages
+per review. Prevalence is the weak spot (308 of 354 reviews) and is checked in the precision run.
 
 ## Ideas on hold
 
