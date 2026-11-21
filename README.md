@@ -54,6 +54,7 @@ uv run icer cohort      # parse the listing export -> data/interim/cohort.csv (4
 uv run icer download    # Recommendation, economic and (2020-21) clinical report PDFs -> data/pdfs/ (~880 files, ~3 GB), content-checked
 uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/
 uv run icer all         # all three in order
+uv run icer extract --extractor a --projects PC0195-000   # LLM extraction (calls the API, costs money)
 ```
 
 `excerpts` is the text-based step from the pilot. It flattens tables into plain text, so it will be replaced by
@@ -79,6 +80,8 @@ src/icer_revisions/
   listing.py           parse the export, build the cohort
   documents.py         pick, download and content-check each review's documents
   excerpts.py          PDF to text, cue-based excerpting (to be replaced by page selection)
+  schema.py            the extraction output (pydantic), from docs/extraction-spec.md §2
+  extract.py           runs one LLM extractor on each review's selected pages
   cli.py               the `icer` command
 tests/
 ```

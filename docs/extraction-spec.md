@@ -4,6 +4,8 @@ What the extraction pipeline reads, what it produces for each review, the rules 
 decide it works. Build from this file. The analysis that uses the data is in [analysis-plan.md](analysis-plan.md),
 and the reasons behind each choice are in [decisions.md](decisions.md).
 
+The output schema is `src/icer_revisions/schema.py` and the runner is `src/icer_revisions/extract.py`.
+
 **Still open:** which models extract and adjudicate, batching, and cost. Page selection is designed (§1.1) but
 not yet built.
 

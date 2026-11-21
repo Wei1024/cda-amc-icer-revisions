@@ -1,4 +1,4 @@
-"""Command line: `icer cohort`, `icer download`, `icer excerpts`, or `icer all`."""
+"""Command line: `icer cohort`, `icer download`, `icer excerpts`, `icer all`, or `icer extract`."""
 
 import argparse
 
@@ -16,6 +16,10 @@ def main(argv: list[str] | None = None) -> None:
     ):
         p = sub.add_parser(name, help=help_)
         p.add_argument("--projects", nargs="+", metavar="PROJECT", help="limit to these project numbers")
+    p = sub.add_parser("extract", help="run one LLM extractor on the selected pages (calls the API; not part of `all`)")
+    p.add_argument("--extractor", required=True, help="extractor name, e.g. a")
+    p.add_argument("--projects", nargs="+", metavar="PROJECT", help="limit to these project numbers")
+    p.add_argument("--limit", type=int, help="stop after this many reviews")
     args = parser.parse_args(argv)
 
     if args.step in ("cohort", "all"):
@@ -32,6 +36,12 @@ def main(argv: list[str] | None = None) -> None:
         documents.run(cohort)
     if args.step in ("excerpts", "all"):
         excerpts.run(cohort)
+    if args.step == "extract":
+        from . import extract  # imported here so the other steps need no API credentials
+
+        if args.extractor not in extract.EXTRACTORS:
+            raise SystemExit(f"unknown extractor {args.extractor!r}; known: {', '.join(extract.EXTRACTORS)}")
+        extract.run(cohort.head(args.limit) if args.limit else cohort, extract.EXTRACTORS[args.extractor])
 
 
 if __name__ == "__main__":

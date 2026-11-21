@@ -17,6 +17,8 @@ EXCERPT_STATS = DATA / "interim" / "excerpt_stats.csv"
 PDFS = DATA / "pdfs"
 TEXT = DATA / "text"
 EXCERPTS = DATA / "excerpts"
+PAGES = DATA / "pages"  # one PDF of selected pages per review (extraction-spec §1.1)
+EXTRACTIONS = DATA / "extractions"
 
 # Cohort: standard sponsor submissions with a recommendation dated in this window (docs/extraction-spec.md, section 1).
 FIRST_YEAR, LAST_YEAR = 2020, 2025
