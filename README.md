@@ -31,7 +31,8 @@ cases), then the [analysis plan](docs/analysis-plan.md) (hypotheses and models, 
 |---|---|
 | Cohort, document download | Done (this repo) |
 | Page selection | Done: one PDF per document of the pages extraction reads, so tables keep their layout ([docs/extraction-spec.md](docs/extraction-spec.md) §1.1) |
-| LLM extraction and adjudication | Being designed; specified in [docs/extraction-spec.md](docs/extraction-spec.md) |
+| LLM extraction | Runner built: four grouped calls per review through OpenRouter, PDFs cached, replies validated; tested on one review ([docs/extraction-spec.md](docs/extraction-spec.md) §1.2) |
+| Second extractor, comparison, adjudication, automatic checks | Not started; next is the 20-review precision check ([docs/extraction-spec.md](docs/extraction-spec.md) §5) |
 | Validation, statistical analysis, write-up | Not started; planned in [docs/analysis-plan.md](docs/analysis-plan.md) |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
@@ -61,6 +62,11 @@ uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts
 uv run icer extract --extractor haiku-test --projects PC0195-000   # LLM extraction via OpenRouter (costs money)
 ```
 
+`extract` runs one extractor, named in `EXTRACTORS` in `src/icer_revisions/extract.py` (`a` is Claude Opus 5.5,
+`haiku-test` is Claude Haiku 5.5); it takes `--projects` and `--limit`. It needs `OPENROUTER_API_KEY` in `.env`,
+and is not part of `all` because it costs money (about $0.15 per review with Haiku 5.5). Re-runs skip finished
+reviews and repeat only failed calls.
+
 `excerpts` is the text-based step from the pilot. It flattens tables into plain text, so `pages` replaces it: the
 LLM reads the selected PDF pages as they are. `excerpts` will be removed once extraction runs on `pages`.
 
@@ -76,7 +82,7 @@ docs/
   extraction-spec.md   what to extract per review, rules for hard cases, checks and the pass bar
   analysis-plan.md     questions, hypotheses, models and sensitivity analyses, fixed in advance
   decisions.md         dated log of design decisions and what they replaced
-  data-sources.md      where documents come from, how two per review are chosen and checked
+  data-sources.md      where documents come from, how each review's documents are chosen and checked
   pilot-findings.md    results of the 60-review feasibility pilot
   literature.md        prior work and the gap this project fills
 data/raw/              CDA-AMC listing export (the only versioned data)
@@ -86,10 +92,11 @@ src/icer_revisions/
   documents.py         pick, download and content-check each review's documents
   pages.py             page selection: the TARGETS rules table, one PDF per document
   excerpts.py          PDF to text, cue-based excerpting (temporary; replaced by pages.py)
-  schema.py            the extraction output (pydantic), from docs/extraction-spec.md §2
-  extract.py           runs one LLM extractor (via OpenRouter) on each review's selected pages
+  schema.py            the extraction output (pydantic) in four field groups, from docs/extraction-spec.md §2
+  extract.py           runs one LLM extractor via OpenRouter: four grouped calls per review, PDFs cached
   cli.py               the `icer` command
 tests/
+.env.example           the API key variable; copy to .env
 ```
 
 ## Development

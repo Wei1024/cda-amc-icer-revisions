@@ -5,9 +5,11 @@ decide it works. Build from this file. The analysis that uses the data is in [an
 and the reasons behind each choice are in [decisions.md](decisions.md).
 
 The output schema is `src/icer_revisions/schema.py` and the runner is `src/icer_revisions/extract.py`, which calls models
-through OpenRouter (native PDF input, JSON-schema output, pinned provider).
+through OpenRouter: native PDF input, four grouped calls per review with the PDFs cached, and replies validated
+against the schema (§1.2).
 
-**Still open:** which models extract and adjudicate, batching, and cost.
+**Still open:** extractor B (a different model family; Gemini first) and the adjudicator; the comparison and
+automatic-check code (§5); and whether to use OpenRouter's half-price batch models for the full run.
 
 **Contents**
 1. [Inputs](#1-inputs)
@@ -186,7 +188,7 @@ Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare
 
 | field | notes |
 |---|---|
-| `evidence` | Up to 4 verbatim quotes of 30 words or fewer, for the fields that are not obvious |
+| `evidence` | Up to 4 verbatim quotes per extraction call, of 30 words or fewer, for the fields that are not obvious. Each gives its document (`rec`, `pe`, `clin`) and page |
 | `notes` | Judgement calls, and populations or comparators not used (rule 6) |
 | `extractor_id` | Model and prompt version |
 

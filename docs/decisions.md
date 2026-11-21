@@ -58,7 +58,7 @@ added about 13 points ([pilot-findings.md](pilot-findings.md)). The bands are ke
 **Decided:** the LLM reads the relevant PDF pages directly (as PDF pages or images), instead of text excerpts.
 **Replaced:** cue-based text excerpts (`icer excerpts`), as used in the pilot.
 **Why:** converting to text flattens tables, and the key numbers are in tables. The cues are kept to score pages,
-and the text layer is kept to check that quoted numbers appear in the source. Being designed.
+and the text layer is kept to check that quoted numbers appear in the source. Built in D16.
 
 ### D6. Keep the outcome, tighten its rules
 **Decided:** keep log(agency ICER ÷ sponsor ICER) as the outcome, and write rules for the cases that were ambiguous
