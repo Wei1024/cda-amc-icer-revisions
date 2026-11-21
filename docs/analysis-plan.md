@@ -56,7 +56,7 @@ check, before the full run.
 |---|---|---|
 | `stream` | [P] | 60/60 |
 | `therapeutic_group` | [P] | 60/60 |
-| `rare_disease` | [P] | from an external source |
+| `rare_disease` | [P], one descriptive study (Balijepalli 2024). Mainly a control: rare diseases tend to have the weaker evidence behind H1–H3, so including it separates rarity from weak evidence | coded inconsistently; now set from prevalence |
 | `pivotal_design` | [P][K] (H3) | 60/60 |
 | `comparison_method` | [P] | 60/60 |
 | `primary_endpoint_type` | [P] (H1) | 60/60 |

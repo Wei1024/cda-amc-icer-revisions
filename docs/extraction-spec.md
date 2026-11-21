@@ -83,6 +83,26 @@ Trial fields come from the clinical section of a combined report, or from the se
 | `treatment_specific_utilities` | bool | Only if stated explicitly; expect many nulls | 13/60 |
 | `resubmission` | bool | True only if the same drug and indication was reviewed before ("previously reviewed: yes", or a resubmission label). Reconsideration of a draft recommendation is false | inconsistent |
 
+**Prevalence (for `rare_disease`).** The LLM copies a number; the rare-disease flag is set in code (§4), so the
+definition is the same for every review. Reports flag rarity in no standard way, and a yes/no read from the text
+was inconsistent in the pilot ([decisions.md](decisions.md), D15).
+
+| field | values | rule |
+|---|---|---|
+| `prevalence_value` | number | As stated, before any conversion |
+| `prevalence_unit` | `per_100k`, `per_10k`, `per_million`, `percent`, `one_in_n`, `patients` | `one_in_n`: the n in "1 in n". `patients`: a head count |
+| `prevalence_kind` | `prevalence`, `incidence`, `eligible_patients` | Prefer prevalence. Use `eligible_patients` only for a count of patients eligible for the drug, and `incidence` only if nothing else is given |
+| `prevalence_region` | `canada`, `other`, `not_stated` | Prefer a Canadian figure |
+
+Rules:
+- Take it from the description of the disease: the Clinical Review's introduction or disease background, or the
+  Recommendation's Background. Never from the committee's deliberation ("the committee considered the rarity of
+  the condition").
+- It is the prevalence of the population the drug is indicated for (e.g. ROS1-positive NSCLC, not all NSCLC). If
+  only the broader disease's figure is given, use it and say so in `notes`.
+- A range: record the midpoint and quote the range in `evidence`.
+- Nothing stated: leave the fields null.
+
 Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare_disease`, `log_sponsor_icer`.
 
 ### 2.5 Price reduction
@@ -158,7 +178,7 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
 | `stream` | `onc` / `non_onc` from the project prefix |
 | `year` | From the listing |
 | `therapeutic_group` | 4–6 groups, mapped from the listing's free text |
-| `rare_disease` | From an external source (CDA-AMC's rare-disease designation or the listing), not from the report text |
+| `rare_disease` | Convert the prevalence fields to cases per 100,000 (a Canadian head count divided by Canada's population in the review year). True if below 50 per 100,000 (1 in 2,000, the threshold usually used in Canada). Null if the only figure is incidence, a head count outside Canada, or none is given. FDA or EMA orphan designation may be used as a cross-check, not as the source |
 | `log_sponsor_icer` | From `sponsor_icer` |
 
 ## 5. Checks and the pass bar

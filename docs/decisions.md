@@ -22,6 +22,7 @@ Each entry: what was decided, why, and what it replaced.
 | [D12](#d12-three-hypotheses-stated-in-advance) | 2026-11-20 | Three hypotheses stated in advance |
 | [D13](#d13-codebook-split-into-three-files) | 2026-11-20 | Codebook split into three files |
 | [D14](#d14-clinical-reports-for-economic-only-reviews) | 2026-11-20 | Clinical reports added for economic-only reviews |
+| [D15](#d15-rare-disease-from-a-prevalence-figure) | 2026-11-20 | Rare disease set in code from a prevalence figure |
 
 Not decided yet: [ideas on hold](#ideas-on-hold).
 
@@ -122,6 +123,20 @@ summary for those years.
 primary endpoint in 5, but median follow-up in only 1. Gaps that fall only on early years are harder to treat as
 missing at random, and the fuller clinical reports also firm up the fields behind H1 and H3. Downloading them
 took minutes, and page selection needs one more rule (take the clinical report's executive summary).
+
+### D15. Rare disease from a prevalence figure
+**Decided:** the LLM extracts the stated prevalence (number, unit, kind, region), and code sets
+`rare_disease` = fewer than 50 per 100,000 (1 in 2,000).
+**Replaced:** a yes/no flag taken from an external source, planned after the pilot (CDA-AMC's rare-disease
+designation or the listing). The listing export has no rare-disease field, Health Canada has no orphan
+designation, and FDA or EMA designations do not always match Canadian indications, so they are kept as a
+cross-check only.
+**Why:** a yes/no read from the text was inconsistent between pilot batches. Reports call a condition rare in
+no standard way, and some mentions are the committee's deliberation, close to the leakage rule. Copying a number
+and applying one threshold in code gives the same definition for every review.
+**Role in the analysis:** the only evidence is one descriptive split (Balijepalli 2024: about 2.5× for rare
+diseases vs 2.3× overall), so it is not a hypothesis. It is kept as a control, because rare diseases tend to
+have the weaker evidence that H1–H3 test.
 
 ## Ideas on hold
 

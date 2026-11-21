@@ -114,7 +114,7 @@ Scripts: `scripts/06_feature_excerpts.py`, `scripts/feature_instructions.md`, `s
 
 **Codebook fixes before the full run**
 1. Take the % of QALYs after the trial only from the sponsor's own results table, or drop it.
-2. Get rare-disease status from an external source, e.g. CDA-AMC's Drugs for Rare Diseases designation or the listing, rather than the text.
+2. Get rare-disease status from an external source, e.g. CDA-AMC's Drugs for Rare Diseases designation or the listing, rather than the text. (Later replaced: rare disease is now set in code from an extracted prevalence figure; see [decisions.md](decisions.md), D15.)
 3. Define resubmission precisely: an earlier review of the same indication, not a reconsideration of a draft.
 4. Add rules for co-primary endpoints, for placebo-plus-backbone trials (record them as head-to-head), and for trial duration vs median follow-up.
 5. Expand the stepwise extraction from "top change only" to every step with its ICER, so each type of change gets a contribution to the revision.
