@@ -1,6 +1,7 @@
 """The extraction runner, with a fake client: no API calls."""
 
 import json
+import re
 
 import pandas as pd
 import pytest
@@ -74,7 +75,7 @@ USAGE = {
 
 
 def group_of(body):
-    return body["response_format"]["json_schema"]["name"].removeprefix("extraction_")
+    return re.search(r"Fill the `(\w+)` fields", body["messages"][1]["content"][-1]["text"]).group(1)
 
 
 def ok(group, content=None, finish="stop"):
@@ -172,9 +173,21 @@ def test_run_makes_one_call_per_group_with_a_shared_cached_prefix(tmp_path, page
     for b in post.bodies[1:]:
         assert b["messages"][0] == first["messages"][0] and b["messages"][1]["content"][:-1] == content[:-1]
     assert len({b["messages"][1]["content"][-1]["text"] for b in post.bodies}) == 4
+    assert "response_format" not in first  # a per-call schema there would invalidate the cache
+    assert (
+        json.dumps(GROUPS["price"].model_json_schema(), separators=(",", ":"))
+        in post.bodies[3]["messages"][1]["content"][-1]["text"]
+    )
 
     again = extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post)
     assert again.status.tolist() == ["cached", "no_pages"] and len(post.bodies) == 4
+
+
+def test_a_reply_in_a_code_fence_is_accepted(tmp_path, pages):
+    fenced = "```json\n" + ok("price")[1]["choices"][0]["message"]["content"] + "\n```"
+    post = FakePost(price=[ok("price", content=fenced)])
+    ex, cohort = extract.EXTRACTORS["a"], pd.DataFrame({"project": ["PC0195-000"]})
+    assert extract.run(cohort, ex, pages_dir=pages, out_dir=tmp_path / "out", post=post).status.tolist() == ["ok"]
 
 
 def test_extractor_ids_are_safe_folder_names():

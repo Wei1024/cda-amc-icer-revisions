@@ -1,16 +1,19 @@
 """Run one LLM extractor over reviews: each review's selected-page PDFs in, one validated record out.
 
 Each review takes four calls, one per field group (`schema.GROUPS`). Every call sends the same prefix, the
-instructions and the review's PDFs, with a cache breakpoint after the last PDF; only a short line naming the
-group follows it. So the first call writes the cache and the other three read the PDFs from it.
+instructions and the review's PDFs, with a cache breakpoint after the last PDF; only the final message, naming the
+group and giving its JSON schema, differs. So the first call writes the cache and the other three read the PDFs
+from it. The schema goes in that message rather than in `response_format`, because providers treat an output
+schema as part of the prompt prefix: a different schema per call would invalidate the cache (Anthropic documents
+this). The reply is validated against the schema in code, and an invalid reply fails that call.
 
 Calls go through OpenRouter's chat completions API, so an extractor can be any model OpenRouter serves. Each
 extractor is a named model + effort setting, optionally pinned to one provider. Three settings keep the two
 extractors comparable:
 - PDFs are sent with the `native` engine, so the model reads the pages themselves. A model without native file
   input fails instead of silently getting OCR text.
-- `require_parameters` routes only to providers that honour the JSON schema, and provider fallbacks are off when a
-  provider is pinned. The record keeps the model and provider that actually answered.
+- `require_parameters` routes only to providers that support every request parameter, and provider fallbacks are
+  off when a provider is pinned. The record keeps the model and provider that actually answered.
 - The instructions are the role text below plus spec §2 and §3, read from docs/extraction-spec.md at run time. A
   hash of the instructions and the JSON schema is part of the extractor id, so a change to either starts a fresh
   set of outputs instead of mixing old and new.
@@ -68,14 +71,16 @@ SECTIONS = {"icers": "§2.1 and §2.2", "stepwise": "§2.3", "features": "§2.4"
 
 def _group_prompt(group: str) -> str:
     fields = ", ".join(f for f in GROUPS[group].model_fields if f not in ("evidence", "notes"))
+    schema = json.dumps(GROUPS[group].model_json_schema(), separators=(",", ":"))
     return (
-        f"Fill the `{group}` fields (spec {SECTIONS[group]}): {fields}. Give evidence and notes for these fields only."
+        f"Fill the `{group}` fields (spec {SECTIONS[group]}): {fields}. "
+        "Give evidence and notes for these fields only.\n"
+        f"Reply with only a JSON object that matches this JSON schema, with no other text:\n{schema}"
     )
 
 
 GROUP_PROMPTS = {g: _group_prompt(g) for g in GROUPS}
-SCHEMAS = {g: m.model_json_schema() for g, m in GROUPS.items()}
-PROMPT_VERSION = hashlib.sha256(json.dumps([SYSTEM, GROUP_PROMPTS, SCHEMAS], sort_keys=True).encode()).hexdigest()[:8]
+PROMPT_VERSION = hashlib.sha256(json.dumps([SYSTEM, GROUP_PROMPTS], sort_keys=True).encode()).hexdigest()[:8]
 
 MAX_PDF_BYTES = 22_000_000  # all documents together; base64 adds a third
 DOC_LABELS = {"rec": "Recommendation", "pe": "Economic report", "clin": "Clinical report"}
@@ -141,10 +146,6 @@ def request_body(extractor: Extractor, project: str, group: str, documents: list
         "model": extractor.model,
         "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": [*documents, prompt]}],
         "plugins": [{"id": "file-parser", "pdf": {"engine": "native"}}],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": f"extraction_{group}", "strict": True, "schema": SCHEMAS[group]},
-        },
         "provider": provider,
         "reasoning": {"effort": extractor.effort},
         "max_tokens": 32000,
@@ -197,6 +198,14 @@ def _usage(data: dict) -> dict:
     }
 
 
+def _json_text(content: str | None) -> str:
+    """The JSON object in a reply, without a Markdown code fence around it."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+    return text.strip()
+
+
 def call_group(post: Post, extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
     """One call for one field group: {output, error, and the call's metadata}."""
     status, data = _send(post, request_body(extractor, project, group, documents))
@@ -215,7 +224,7 @@ def call_group(post: Post, extractor: Extractor, project: str, group: str, docum
     if choice.get("finish_reason") != "stop":  # "length": output cut off; "content_filter": refused
         return call | {"error": choice.get("finish_reason") or "no_finish_reason", "output": None}
     try:
-        parsed = GROUPS[group].model_validate_json(choice["message"]["content"] or "")
+        parsed = GROUPS[group].model_validate_json(_json_text(choice["message"]["content"]))
     except ValidationError as e:
         return call | {"error": f"invalid_output: {e.error_count()} errors", "output": None}
     return call | {"error": None, "output": parsed.model_dump(mode="json")}

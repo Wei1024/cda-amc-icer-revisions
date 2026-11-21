@@ -24,6 +24,7 @@ Each entry: what was decided, why, and what it replaced.
 | [D14](#d14-clinical-reports-for-economic-only-reviews) | 2026-11-20 | Clinical reports added for economic-only reviews |
 | [D15](#d15-rare-disease-from-a-prevalence-figure) | 2026-11-20 | Rare disease set in code from a prevalence figure |
 | [D16](#d16-page-selection-by-bookmarked-section) | 2026-11-20 | Page selection by bookmarked section, with cue pages added |
+| [D17](#d17-four-grouped-calls-through-openrouter-pdfs-cached) | 2026-11-20 | Four grouped calls through OpenRouter, PDFs cached |
 
 Not decided yet: [ideas on hold](#ideas-on-hold).
 
@@ -149,6 +150,25 @@ impact appendix or a table of contents, and it splits tables across pages.
 out the same way, so sections are a reliable map. Measured on all 883 documents, the rules keep every $/QALY page,
 stepped-analysis table, included-studies table and follow-up page that the cues find, at a median of 58 pages
 per review. Prevalence is the weak spot (307 of 354 reviews) and is checked in the precision run.
+
+### D17. Four grouped calls through OpenRouter, PDFs cached
+**Decided:** extraction runs through OpenRouter, so models are easy to switch. Each review takes four calls, one
+per field group, sent one after another. The PDFs are cached after the first call, and each group's JSON schema
+goes in the final message rather than in `response_format` ([extraction-spec.md](extraction-spec.md) §1.2).
+**Replaced:** one call per review through the Anthropic SDK, with the whole schema enforced as structured output.
+**Why:**
+- *One schema was not possible.* Anthropic's structured outputs allow at most 16 fields that may be null or of
+  several types, and the full record has 29. Splitting by field group fixes that and keeps each call focused.
+- *An enforced schema per call broke the cache.* Providers treat the output schema as part of the prompt prefix
+  (Anthropic: "Changing the output_config.format parameter invalidates any prompt cache"). With a schema per call,
+  each of the four calls wrote its own cache of the PDFs: about 175k tokens each, $0.46 for PC0195 with Haiku 5.5.
+  With the schema in the final message, calls 2–4 read 172,643 tokens from the cache: $0.154.
+- *The trade-off:* the schema is requested rather than enforced. Every reply is validated in code, and a failed
+  call is repeated on the next run.
+**Considered:** one call per review with numbers returned as a list (to fit the limit), the cheapest option at
+about two thirds of the grouped cost. Grouped calls were preferred for focus, at a cost the cache keeps moderate.
+**Still open:** extractor B. Gemini is a different model family and reads PDFs at roughly 258–560 tokens per page,
+against several thousand for Claude, so it is the first candidate to test.
 
 ## Ideas on hold
 

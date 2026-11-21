@@ -71,6 +71,24 @@ Recommendation's price condition and headline figure, rule 1) and let each quote
 `output_page`, `reason` (the target and the section or cue). Evidence quotes give a document and an output page,
 and are mapped back to source pages with this file.
 
+### 1.2 Extraction calls
+
+Each review is extracted in **four calls, one per group of fields**: `icers` (§2.1 and §2.2), `stepwise` (§2.3),
+`features` (§2.4) and `price` (§2.5). Each call returns its group's fields plus `evidence` and `notes`, and the four
+are merged into one record. The calls are made one after another, through OpenRouter.
+
+- **The PDFs are cached across the four calls.** Every call sends the same instructions and the same labelled
+  PDFs, with a cache breakpoint after the last PDF. Only the final message differs: it names the group and gives
+  that group's JSON schema. The first call writes the cache; the other three read the PDFs from it.
+- **The schema goes in the final message, not in `response_format`.** Providers treat an output schema as part
+  of the prompt prefix, so a different schema per call would invalidate the cache. The reply is validated against
+  the schema in code; an invalid reply fails that call, and a re-run repeats only the calls that failed.
+- **Each group stays within Anthropic's schema limit** of 16 fields that may be null or of several types (the full
+  record has 29).
+
+Measured on PC0195 with Claude Haiku 5.5 (about 175k input tokens per call): $0.154 for the review with the cache,
+against $0.46 with a schema per call and no cache hits ([decisions.md](decisions.md), D17).
+
 ## 2. Output: one record per review
 
 Fields are grouped by what they are for. "Pilot" is how many of the 60 pilot reviews had the field; low counts
