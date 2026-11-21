@@ -19,7 +19,11 @@ with recommendations from 2020 to 2025**, and asks:
 
 LLMs are used to build the dataset. The analysis itself is statistical: regression with effect sizes and
 confidence intervals, fixed in advance. Cross-validated prediction measures how much the features explain, and a
-tree-based model checks for missed interactions ([analysis plan](docs/codebook.md#8-analysis-plan-fixed-before-the-outcomes-are-seen)).
+tree-based model checks for missed interactions ([analysis plan](docs/analysis-plan.md)).
+
+**Start here:** [extraction spec](docs/extraction-spec.md) (what the pipeline produces and the rules for hard
+cases), then the [analysis plan](docs/analysis-plan.md) (hypotheses and models, fixed in advance), then the
+[decision log](docs/decisions.md) (why things are the way they are, including choices that were replaced).
 
 ## Status
 
@@ -27,8 +31,8 @@ tree-based model checks for missed interactions ([analysis plan](docs/codebook.m
 |---|---|
 | Cohort, document download | Done (this repo) |
 | Page selection | Being designed. The LLM will read the selected PDF pages directly, so tables keep their layout. This replaces the current text excerpts |
-| LLM extraction and adjudication | Being designed; specified in [docs/codebook.md](docs/codebook.md) |
-| Validation, statistical analysis, write-up | Not started; analysis plan in [docs/codebook.md](docs/codebook.md) §8 |
+| LLM extraction and adjudication | Being designed; specified in [docs/extraction-spec.md](docs/extraction-spec.md) |
+| Validation, statistical analysis, write-up | Not started; planned in [docs/analysis-plan.md](docs/analysis-plan.md) |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
 median ratio of 1.9× agrees with published estimates. In a typical review the sponsor's own ICER already
@@ -63,7 +67,9 @@ PDFs and text that already exist. Set `ICER_DATA_DIR` to keep generated data out
 
 ```
 docs/
-  codebook.md          extraction spec: target, decision rules, features, validation plan
+  extraction-spec.md   what to extract per review, rules for hard cases, checks and the pass bar
+  analysis-plan.md     questions, hypotheses, models and sensitivity analyses, fixed in advance
+  decisions.md         dated log of design decisions and what they replaced
   data-sources.md      where documents come from, how two per review are chosen and checked
   pilot-findings.md    results of the 60-review feasibility pilot
   literature.md        prior work and the gap this project fills

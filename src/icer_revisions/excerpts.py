@@ -1,6 +1,6 @@
 """PDF -> text -> one compact excerpt per review, the input to LLM extraction.
 
-A review's two documents run to hundreds of thousands of characters, but the fields in docs/codebook.md
+A review's two documents run to hundreds of thousands of characters, but the fields in docs/extraction-spec.md
 come from a small number of passages. Every cue match below is widened into a context window; overlapping
 windows are merged into spans; spans are ranked and kept up to a per-document size cap.
 

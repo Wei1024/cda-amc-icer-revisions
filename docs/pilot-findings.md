@@ -120,7 +120,7 @@ Scripts: `scripts/06_feature_excerpts.py`, `scripts/feature_instructions.md`, `s
 5. Expand the stepwise extraction from "top change only" to every step with its ICER, so each type of change gets a contribution to the revision.
 
 ## Price-cut split (added 2026-11-15)
-Computed from `data/sample_extracted.csv` in the exploration workspace, on the 33 reviews with a sponsor ICER, an agency ICER and a stated % cut. Each implied cut is max(0, 1 − threshold / ICER), as defined in [codebook §6](codebook.md#6-price-reduction-part-of-the-revision-question).
+Computed from `data/sample_extracted.csv` in the exploration workspace, on the 33 reviews with a sponsor ICER, an agency ICER and a stated % cut. Each implied cut is max(0, 1 − threshold / ICER), as defined in [extraction-spec §4](extraction-spec.md#4-computed-in-code-not-by-the-llm).
 
 - **The sponsor's own ICER already implied most of the cut.**
   - The median implied cut at the sponsor's ICER is 65%; at the agency's ICER it is 82%. The median reported cut is 75%.

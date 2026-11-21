@@ -18,7 +18,7 @@ PDFS = DATA / "pdfs"
 TEXT = DATA / "text"
 EXCERPTS = DATA / "excerpts"
 
-# Cohort: standard sponsor submissions with a recommendation dated in this window (docs/codebook.md, section 1).
+# Cohort: standard sponsor submissions with a recommendation dated in this window (docs/extraction-spec.md, section 1).
 FIRST_YEAR, LAST_YEAR = 2020, 2025
 STREAMS = {"SR": "non_onc", "PC": "onc"}  # project-number prefix -> stream (CDEC / pERC)
 
