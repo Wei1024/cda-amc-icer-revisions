@@ -6,8 +6,7 @@ and the reasons behind each choice are in [decisions.md](decisions.md).
 
 The output schema is `src/icer_revisions/schema.py` and the runner is `src/icer_revisions/extract.py`.
 
-**Still open:** which models extract and adjudicate, batching, and cost. Page selection is designed (§1.1) but
-not yet built.
+**Still open:** which models extract and adjudicate, batching, and cost.
 
 **Contents**
 1. [Inputs](#1-inputs)
@@ -22,20 +21,22 @@ not yet built.
 |---|---|---|
 | Reviews | One record per CDA-AMC project number (one drug × indication). Recommendation dated 2020-01-01 to 2025-12-31, prefix `SR` (non-oncology) or `PC` (oncology): **404 reviews** (407 listing rows; three oncology reviews are listed twice and merged). Other prefixes (PH, PX, PG, SX, SG, ST, SF, TS) are not standard sponsor submissions and are excluded. | Done: `uv run icer cohort` |
 | Documents | The Recommendation, and the economic or combined clinical + economic report (for pre-2022 pCODR reviews, the Economic Guidance Report). When the economic report covers economics only (78 reviews, 2020–2021), also the separate clinical report, which is the source of the trial fields. Chosen by `icer_revisions.documents`; see [data-sources.md](data-sources.md). | Done: `uv run icer download` |
-| Pages | The pages that hold the fields below, sent to the LLM as PDF pages so tables keep their layout (§1.1). The text layer is kept for checking quotes. | Designed, not built; replaces the text excerpts from the pilot |
+| Pages | The pages that hold the fields below, sent to the LLM as PDF pages so tables keep their layout (§1.1). The text layer is kept for checking quotes. | Done: `uv run icer pages`; replaces the text excerpts from the pilot |
 
 ### 1.1 Page selection
 
 Each document type has its own rule. Section ranges come from the PDF's bookmarks; text cues pick a few extra
-pages and serve as the fallback when there are no usable bookmarks.
+pages and serve as the fallback when there are no usable bookmarks. The rules are the `TARGETS` table in
+`src/icer_revisions/pages.py`: each target names the fields it serves, its document, its sections and its cues, so
+changing where a field is looked for means editing one entry.
 
 | document | rule | pages kept (median, p90, max) |
 |---|---|---|
 | Recommendation | The whole document, minus the stakeholder-input and committee-membership sections when bookmarks mark them | 16, 25, 42 of 20, 31, 49 |
 | Economic report, 60 pages or fewer | The whole document. These are the economic-only reports (pCODR EGRs, CDR pharmacoeconomic reports) and a few short combined ones | whole |
-| Economic report, longer, with a "Pharmacoeconomic Review" bookmark | **Pharmacoeconomic Review:** Executive Summary, Economic Review, the appendix on the submitted evaluation, and the appendix on the agency's reanalyses. **Clinical Review:** Executive Summary. **Extra pages from the Clinical Review, by cue:** the 3 best matches for the included-studies table, the 2 best for median follow-up, the 2 best for prevalence | 36, 47, 93 of 145, 210, 383 (all long reports) |
+| Economic report, longer, with a "Pharmacoeconomic Review" bookmark | **Pharmacoeconomic Review:** Executive Summary, Economic Review, the appendix on the submitted evaluation, and the appendix on the agency's reanalyses. **Clinical Review:** Executive Summary. **Extra pages from the Clinical Review, by cue:** the 3 best matches for the included-studies table, the 2 best for median follow-up, the 2 best for prevalence | 37, 47, 92 of 145, 210, 383 (all long reports) |
 | Economic report, longer, other bookmarks (7 reports) | Bookmarked sections named executive summary, economic, cost information, reanalysis or disease background (under 40 pages each), plus the 12 pages with the most $/QALY figures and the same extra pages | |
-| Clinical report (78 reviews, 2020–2021) | The first 25% of pages (at least 15, at most 30), plus the 2 best pages for median follow-up and the 2 best for the included-studies table | 28, 30, 32 of 108, 136, 197 |
+| Clinical report (78 reviews, 2020–2021) | The first 25% of pages (at least 15, at most 30), plus the 2 best pages for median follow-up and the 2 best for the included-studies table | 26, 30, 31 of 108, 136, 197 |
 
 On top of these rules, in every document:
 - **Always kept:** any page with the agency's stepped-analysis table ("Summary of the Stepped Analysis of the
@@ -44,7 +45,8 @@ On top of these rules, in every document:
 - **Never kept on purpose:** budget impact appendices, cost comparison tables, submission quality, references,
   and patient or clinician input.
 
-**Result: a median of 56 pages per review (p90 71, max 109), 22,772 of 70,577 pages in all.**
+**Result: a median of 58 pages per review (p90 72, max 108), 23,185 of 70,577 pages in all; 4.9 MB per review
+(max 18 MB), 2.0 GB in all.**
 
 **Coverage, measured with text cues** (documents that have such a page anywhere → selection keeps at least one):
 
@@ -54,16 +56,18 @@ On top of these rules, in every document:
 | the stepped-analysis table | 251 of 251 | |
 | the included-studies table | 366 of 366 | |
 | "median follow-up" | 211 of 211 | |
-| "primary endpoint / outcome" | 390 of 404 | The other 14 likely state the endpoint without the phrase |
-| "prevalence" | 308 of 354 | Many of the 46 others mention it only in the budget impact appendix (the sponsor's population estimate), references or patient input. Check in the precision run |
+| "primary endpoint / outcome" | 389 of 404 | The other 15 likely state the endpoint without the phrase |
+| "prevalence" | 307 of 354 | Many of the 47 others mention it only in the budget impact appendix (the sponsor's population estimate), references or patient input. Check in the precision run |
 
 These cues show where the information is, not that it is correct; the precision check (§5) is the real test.
 If an extractor reports a field as not found, the review's full documents are searched with the same cues, and a
 hit outside the selection is flagged so the rule can be fixed.
 
-**Output.** For each review, one PDF of the selected pages in document order (Recommendation, economic report,
-clinical report), and a page map in `data/interim/page_selection.csv`: `project`, `kind`, `source_page`,
-`output_page`, `reason` (the section or cue). Quotes and page numbers from the extractors refer to output pages
+**Output.** For each review, one PDF per document, `data/pages/<project>/{rec,pe,clin}.pdf`, sent to the model as
+separate labelled documents in one request. Separate documents keep fields that depend on the source clear (the
+Recommendation's price condition and headline figure, rule 1) and let each quote name its document. The page map,
+`data/interim/page_selection.csv`, has one row per kept page: `project`, `kind`, `n_pages`, `source_page`,
+`output_page`, `reason` (the target and the section or cue). Evidence quotes give a document and an output page,
 and are mapped back to source pages with this file.
 
 ## 2. Output: one record per review

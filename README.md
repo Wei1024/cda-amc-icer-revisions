@@ -30,7 +30,7 @@ cases), then the [analysis plan](docs/analysis-plan.md) (hypotheses and models, 
 | Stage | State |
 |---|---|
 | Cohort, document download | Done (this repo) |
-| Page selection | Being designed. The LLM will read the selected PDF pages directly, so tables keep their layout. This replaces the current text excerpts |
+| Page selection | Done: one PDF per document of the pages extraction reads, so tables keep their layout ([docs/extraction-spec.md](docs/extraction-spec.md) §1.1) |
 | LLM extraction and adjudication | Being designed; specified in [docs/extraction-spec.md](docs/extraction-spec.md) |
 | Validation, statistical analysis, write-up | Not started; planned in [docs/analysis-plan.md](docs/analysis-plan.md) |
 
@@ -45,22 +45,27 @@ Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 if needed).
 
 ```bash
 uv sync
+cp .env.example .env    # then add your own API key; .env is gitignored
 ```
+
+The API key is needed only for LLM extraction (`icer extract`); the other steps run without one.
 
 ## Pipeline
 
 ```bash
 uv run icer cohort      # parse the listing export -> data/interim/cohort.csv (404 reviews)
 uv run icer download    # Recommendation, economic and (2020-21) clinical report PDFs -> data/pdfs/ (~880 files, ~3 GB), content-checked
-uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/
-uv run icer all         # all three in order
+uv run icer pages       # selected pages -> data/pages/<project>/{rec,pe,clin}.pdf + a page map
+uv run icer all         # cohort, download and pages in order
+uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/ (temporary, not in `all`)
 uv run icer extract --extractor a --projects PC0195-000   # LLM extraction (calls the API, costs money)
 ```
 
-`excerpts` is the text-based step from the pilot. It flattens tables into plain text, so it will be replaced by
-page selection, which keeps the relevant PDF pages for the LLM to read as they are.
+`excerpts` is the text-based step from the pilot. It flattens tables into plain text, so `pages` replaces it: the
+LLM reads the selected PDF pages as they are. `excerpts` will be removed once extraction runs on `pages`.
 
-`download` and `excerpts` accept `--projects SR0616-000 PC0238-000 ...` to run on a subset. Re-runs skip
+The download (about 3 GB) takes a while and is safe to rerun: it skips PDFs that are already there and checks every file.
+`download`, `pages` and `excerpts` accept `--projects SR0616-000 PC0238-000 ...` to run on a subset. Re-runs skip
 PDFs and text that already exist. Set `ICER_DATA_DIR` to keep generated data outside the repo. See
 [data/README.md](data/README.md) for every file.
 
@@ -79,7 +84,8 @@ src/icer_revisions/
   config.py            paths and cohort definition
   listing.py           parse the export, build the cohort
   documents.py         pick, download and content-check each review's documents
-  excerpts.py          PDF to text, cue-based excerpting (to be replaced by page selection)
+  pages.py             page selection: the TARGETS rules table, one PDF per document
+  excerpts.py          PDF to text, cue-based excerpting (temporary; replaced by pages.py)
   schema.py            the extraction output (pydantic), from docs/extraction-spec.md §2
   extract.py           runs one LLM extractor on each review's selected pages
   cli.py               the `icer` command

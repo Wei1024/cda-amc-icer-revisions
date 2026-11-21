@@ -1,4 +1,4 @@
-"""Run one LLM extractor over reviews: a PDF of each review's selected pages in, one validated record out.
+"""Run one LLM extractor over reviews: each review's selected-page PDFs in, one validated record out.
 
 Each extractor is a named model + effort setting. The instructions are the role text below plus spec §2 and §3,
 read from docs/extraction-spec.md at run time, so the prompt and the spec cannot drift apart. The prompt version
@@ -26,15 +26,16 @@ SPEC = config.ROOT / "docs" / "extraction-spec.md"
 
 ROLE = """You extract data from Canadian Drug Agency (CDA-AMC, formerly CADTH) reimbursement reviews.
 
-The attached PDF holds selected pages of one review, in this order: the Recommendation, the economic (or combined
-clinical and economic) report, and for some reviews the separate clinical report. Fill every field of the output
-schema from these pages only.
+The attached documents are selected pages of one review, each labelled before it: `rec` (the Recommendation),
+`pe` (the economic, or combined clinical and economic, report) and, for some reviews, `clin` (the separate
+clinical report). Fill every field of the output schema from these pages only.
 
 - When the pages do not give a value, use null, or the field's "not reported" or "unclear" code. Never guess.
 - Follow the field definitions and the numbered rules below. When a rule decides a value, say so in `notes`
   with its number (for example "rule 5: used the revised sponsor base case").
 - Submission features describe what the sponsor submitted. Never take them from the agency's critique.
-- `evidence` quotes are verbatim, and their page numbers are pages of the attached PDF (its first page is 1).
+- `evidence` quotes are verbatim. Give the document they come from and the page within that attached document
+  (its first page is 1).
 
 The field definitions and rules follow."""
 
@@ -52,7 +53,8 @@ PROMPT_VERSION = hashlib.sha256((SYSTEM + SCHEMA).encode()).hexdigest()[:8]
 
 # $ per million tokens: input, output, cache read. Cache writes are billed at 1.25x input (5-minute cache).
 PRICES = {"claude-opus-5-5": (4.00, 20.00, 0.20)}
-MAX_PDF_BYTES = 30_000_000  # the request limit is 32 MB, and base64 adds a third
+MAX_PDF_BYTES = 22_000_000  # all documents together: the request limit is 32 MB, and base64 adds a third
+DOC_LABELS = {"rec": "Recommendation", "pe": "Economic report", "clin": "Clinical report"}
 
 
 @dataclass(frozen=True)
@@ -93,29 +95,34 @@ def _usage(response) -> dict:
     }
 
 
-def extract_one(client: anthropic.Anthropic, extractor: Extractor, project: str, pdf: Path) -> dict:
+def review_docs(pages_dir: Path, project: str) -> dict[str, Path]:
+    """The review's selected-page PDFs that exist, in the order they are sent."""
+    return {k: p for k in DOC_LABELS if (p := pages_dir / project / f"{k}.pdf").exists()}
+
+
+def _content(project: str, docs: dict[str, Path]) -> list[dict]:
+    content = []
+    for kind, path in docs.items():
+        data = base64.standard_b64encode(path.read_bytes()).decode()
+        content.append({"type": "text", "text": f"Document `{kind}`: {DOC_LABELS[kind]}"})
+        content.append(
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": data}}
+        )
+    content.append({"type": "text", "text": f"Review {project}: extract the record."})
+    return content
+
+
+def extract_one(client: anthropic.Anthropic, extractor: Extractor, project: str, docs: dict[str, Path]) -> dict:
     """Call the model once for one review. Always returns a record; `error` is set when there is no extraction."""
-    record = {"project": project, "extractor_id": extractor.id, "model": extractor.model, "pages_pdf": pdf.name}
-    if pdf.stat().st_size > MAX_PDF_BYTES:
+    record = {"project": project, "extractor_id": extractor.id, "model": extractor.model, "documents": list(docs)}
+    if sum(p.stat().st_size for p in docs.values()) > MAX_PDF_BYTES:
         return record | {"error": "pdf_too_large", "extraction": None}
-    data = base64.standard_b64encode(pdf.read_bytes()).decode()
     try:
         response = client.with_options(timeout=900).messages.parse(
             model=extractor.model,
             max_tokens=16000,
             system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {"type": "base64", "media_type": "application/pdf", "data": data},
-                        },
-                        {"type": "text", "text": f"Review {project}: extract the record."},
-                    ],
-                }
-            ],
+            messages=[{"role": "user", "content": _content(project, docs)}],
             output_format=Extraction,
             output_config={"effort": extractor.effort},
         )
@@ -159,18 +166,18 @@ def run(
     out_dir: Path = config.EXTRACTIONS,
     client: anthropic.Anthropic | None = None,
 ) -> pd.DataFrame:
-    """Extract every review in `cohort` that has a pages PDF and no successful record yet; return a summary."""
+    """Extract every review in `cohort` that has selected pages and no successful record yet; return a summary."""
     client = client or anthropic.Anthropic()
     rows = []
     for project in cohort["project"]:
         dest = out_path(extractor, project, out_dir)
-        pdf = pages_dir / f"{project}.pdf"
+        docs = review_docs(pages_dir, project)
         if done(dest):
             status = "cached"
-        elif not pdf.exists():
+        elif not docs:
             status = "no_pages"
         else:
-            record = extract_one(client, extractor, project, pdf)
+            record = extract_one(client, extractor, project, docs)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(json.dumps(record, indent=2))
             status = record["error"] or "ok"

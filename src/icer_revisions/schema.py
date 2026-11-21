@@ -45,8 +45,11 @@ class _Strict(BaseModel):
 
 class Evidence(_Strict):
     field: str = Field(description="Name of the field this quote supports")
-    quote: str = Field(description="Verbatim text from the pages, 30 words or fewer")
-    page: int = Field(description="Page number in the attached PDF (1 = its first page)")
+    document: Literal["rec", "pe", "clin"] = Field(
+        description="Which attached document: rec (Recommendation), pe (economic report), clin (clinical report)"
+    )
+    quote: str = Field(description="Verbatim text from that document, 30 words or fewer")
+    page: int = Field(description="Page number within that attached document (1 = its first page)")
 
 
 class Step(_Strict):

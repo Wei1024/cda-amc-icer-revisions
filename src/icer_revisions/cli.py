@@ -1,8 +1,8 @@
-"""Command line: `icer cohort`, `icer download`, `icer excerpts`, `icer all`, or `icer extract`."""
+"""Command line: `icer cohort`, `icer download`, `icer pages`, `icer excerpts`, `icer all`, or `icer extract`."""
 
 import argparse
 
-from . import documents, excerpts, listing
+from . import documents, excerpts, listing, pages
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -11,8 +11,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("cohort", help="parse the listing export and write the study cohort")
     for name, help_ in (
         ("download", "download each review's Recommendation, economic report and, where needed, clinical report"),
-        ("excerpts", "convert PDFs to text and cut one excerpt per review"),
-        ("all", "run cohort, download and excerpts in order"),
+        ("pages", "select the pages extraction reads and write one PDF per document"),
+        ("excerpts", "convert PDFs to text and cut one excerpt per review (temporary; replaced by pages)"),
+        ("all", "run cohort, download and pages in order"),
     ):
         p = sub.add_parser(name, help=help_)
         p.add_argument("--projects", nargs="+", metavar="PROJECT", help="limit to these project numbers")
@@ -34,7 +35,9 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit("none of the given projects are in the cohort")
     if args.step in ("download", "all"):
         documents.run(cohort)
-    if args.step in ("excerpts", "all"):
+    if args.step in ("pages", "all"):
+        pages.run(cohort)
+    if args.step == "excerpts":
         excerpts.run(cohort)
     if args.step == "extract":
         from . import extract  # imported here so the other steps need no API credentials

@@ -14,10 +14,11 @@ RAW_LISTING = ROOT / "data" / "raw" / "reimbursement-review.csv"
 COHORT = DATA / "interim" / "cohort.csv"
 MANIFEST = DATA / "interim" / "pdf_manifest.csv"
 EXCERPT_STATS = DATA / "interim" / "excerpt_stats.csv"
+PAGE_MAP = DATA / "interim" / "page_selection.csv"
 PDFS = DATA / "pdfs"
 TEXT = DATA / "text"
 EXCERPTS = DATA / "excerpts"
-PAGES = DATA / "pages"  # one PDF of selected pages per review (extraction-spec §1.1)
+PAGES = DATA / "pages"  # selected pages: <project>/<kind>.pdf (extraction-spec §1.1)
 EXTRACTIONS = DATA / "extractions"
 
 # Cohort: standard sponsor submissions with a recommendation dated in this window (docs/extraction-spec.md, section 1).

@@ -147,8 +147,8 @@ cues gives about 16 pages per review, but it cannot tell an ICER in the economic
 impact appendix or a table of contents, and it splits tables across pages.
 **Why:** from 2022, 96–100% of combined reports have a "Pharmacoeconomic Review" bookmark, and the reports are laid
 out the same way, so sections are a reliable map. Measured on all 883 documents, the rules keep every $/QALY page,
-stepped-analysis table, included-studies table and follow-up page that the cues find, at a median of 56 pages
-per review. Prevalence is the weak spot (308 of 354 reviews) and is checked in the precision run.
+stepped-analysis table, included-studies table and follow-up page that the cues find, at a median of 58 pages
+per review. Prevalence is the weak spot (307 of 354 reviews) and is checked in the precision run.
 
 ## Ideas on hold
 

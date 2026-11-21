@@ -62,7 +62,7 @@ RECORD = {
     "price_reduction_band": None,
     "price_reduction_status": "pct",
     "wtp_threshold": 50000.0,
-    "evidence": [{"field": "agency_icer", "quote": "ICER of $171,723 per QALY", "page": 3}],
+    "evidence": [{"field": "agency_icer", "document": "pe", "quote": "ICER of $171,723 per QALY", "page": 3}],
     "notes": "rule 4: point estimate used; range recorded",
 }
 USAGE = SimpleNamespace(input_tokens=1000, output_tokens=500, cache_read_input_tokens=0, cache_creation_input_tokens=0)
@@ -92,8 +92,9 @@ class FakeClient:
 @pytest.fixture
 def pages(tmp_path):
     d = tmp_path / "pages"
-    d.mkdir()
-    (d / "PC0195-000.pdf").write_bytes(b"%PDF-1.7 fake")
+    (d / "PC0195-000").mkdir(parents=True)
+    for kind in ("rec", "pe"):
+        (d / "PC0195-000" / f"{kind}.pdf").write_bytes(b"%PDF-1.7 fake")
     return d
 
 
@@ -121,7 +122,10 @@ def test_run_writes_one_record_and_skips_it_next_time(tmp_path, pages):
     assert record["cost_usd"] == pytest.approx((1000 * 4 + 500 * 20) / 1e6)
     call = client.calls[0]
     assert call["model"] == "claude-opus-5-5" and call["output_format"] is Extraction
-    assert call["messages"][0]["content"][0]["type"] == "document"
+    content = call["messages"][0]["content"]
+    assert [c["type"] for c in content] == ["text", "document", "text", "document", "text"]
+    assert content[0]["text"].startswith("Document `rec`") and content[2]["text"].startswith("Document `pe`")
+    assert record["documents"] == ["rec", "pe"]
 
     again = extract.run(cohort, ex, pages_dir=pages, out_dir=out, client=client)
     assert again.status.tolist() == ["cached", "no_pages"] and len(client.calls) == 1
