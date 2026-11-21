@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from icer_revisions import extract
-from icer_revisions.schema import Extraction
+from icer_revisions.schema import GROUPS, Extraction
 
 RECORD = {
     "sponsor_icer": 157293.0,
@@ -73,23 +73,21 @@ USAGE = {
 }
 
 
-class FakePost:
-    """Stands in for the HTTP call: records each request body and returns canned responses in turn."""
-
-    def __init__(self, *responses):
-        self.bodies, self.responses = [], list(responses) or [ok()]
-
-    def __call__(self, body):
-        self.bodies.append(body)
-        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+def group_of(body):
+    return body["response_format"]["json_schema"]["name"].removeprefix("extraction_")
 
 
-def ok(content=None, finish="stop"):
-    content = json.dumps(RECORD) if content is None else content
+def ok(group, content=None, finish="stop"):
+    """A successful response for one group's call, holding that group's fields of RECORD."""
+    if content is None:
+        fields = {k: RECORD[k] for k in GROUPS[group].model_fields if k not in ("evidence", "notes")}
+        content = json.dumps(
+            fields | {"evidence": RECORD["evidence"] if group == "icers" else [], "notes": f"{group} note"}
+        )
     return (
         200,
         {
-            "id": "gen-1",
+            "id": f"gen-{group}",
             "model": "anthropic/claude-opus-5.5",
             "provider": "Anthropic",
             "usage": USAGE,
@@ -104,6 +102,19 @@ def fail(code, error_type=None, status=None):
     return status or code, {"error": {"code": code, "message": "nope", "metadata": meta}}, {"Retry-After": "0"}
 
 
+class FakePost:
+    """Stands in for the HTTP call: answers each group's call, with scripted responses for chosen groups."""
+
+    def __init__(self, **scripted):  # group -> list of responses, used in turn
+        self.bodies, self.scripted = [], {g: list(r) for g, r in scripted.items()}
+
+    def __call__(self, body):
+        self.bodies.append(body)
+        group = group_of(body)
+        queue = self.scripted.get(group)
+        return queue.pop(0) if queue else ok(group)
+
+
 @pytest.fixture
 def pages(tmp_path):
     d = tmp_path / "pages"
@@ -111,6 +122,11 @@ def pages(tmp_path):
     for kind in ("rec", "pe"):
         (d / "PC0195-000" / f"{kind}.pdf").write_bytes(b"%PDF-1.7 fake")
     return d
+
+
+@pytest.fixture(autouse=True)
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
 
 
 def test_schema_accepts_a_full_record_and_rejects_unknown_codes():
@@ -121,34 +137,44 @@ def test_schema_accepts_a_full_record_and_rejects_unknown_codes():
         Extraction.model_validate(RECORD | {"extra_field": 1})
 
 
+def test_groups_cover_every_field_once():
+    fields = [f for m in GROUPS.values() for f in m.model_fields if f not in ("evidence", "notes")]
+    assert sorted(fields) == sorted(f for f in Extraction.model_fields if f not in ("evidence", "notes"))
+
+
 def test_instructions_carry_the_spec_rules():
     assert "Rules for hard cases" in extract.SYSTEM and "PC0195" in extract.SYSTEM
     assert "Computed in code" not in extract.SYSTEM  # §4 is code, not prompt
     assert len(extract.PROMPT_VERSION) == 8
 
 
-def test_run_writes_one_record_and_skips_it_next_time(tmp_path, pages):
+def test_run_makes_one_call_per_group_with_a_shared_cached_prefix(tmp_path, pages):
     ex, post, cohort = extract.EXTRACTORS["a"], FakePost(), pd.DataFrame({"project": ["PC0195-000", "SR0001-000"]})
     out = tmp_path / "out"
     summary = extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post)
     assert summary.status.tolist() == ["ok", "no_pages"]
     record = json.loads(extract.out_path(ex, "PC0195-000", out).read_text())
-    assert record["extraction"]["agency_icer"] == 171723.0 and record["error"] is None
-    assert record["usage"]["cost_usd"] == 0.0123 and record["provider"] == "Anthropic"
-    assert record["documents"] == ["rec", "pe"]
+    assert record["error"] is None and record["documents"] == ["rec", "pe"]
+    assert record["extraction"]["agency_icer"] == 171723.0 and record["extraction"]["wtp_threshold"] == 50000.0
+    assert record["extraction"]["notes"].splitlines() == [f"{g}: {g} note" for g in GROUPS]
+    assert record["cost_usd"] == pytest.approx(4 * 0.0123) and record["calls"]["price"]["provider"] == "Anthropic"
 
-    body = post.bodies[0]
-    assert body["model"] == "anthropic/claude-opus-5.5"
-    assert body["plugins"] == [{"id": "file-parser", "pdf": {"engine": "native"}}]
-    assert body["provider"] == {"require_parameters": True, "order": ["anthropic"], "allow_fallbacks": False}
-    assert body["response_format"]["json_schema"]["schema"] == Extraction.model_json_schema()
-    content = body["messages"][1]["content"]
-    assert [c["type"] for c in content] == ["text", "file", "text", "file", "text"]
+    assert [group_of(b) for b in post.bodies] == list(GROUPS)
+    first = post.bodies[0]
+    assert first["model"] == "anthropic/claude-opus-5.5"
+    assert first["plugins"] == [{"id": "file-parser", "pdf": {"engine": "native"}}]
+    assert first["provider"] == {"require_parameters": True, "order": ["anthropic"], "allow_fallbacks": False}
+    content = first["messages"][1]["content"]
+    assert [c["type"] for c in content] == ["text", "file", "text", "file", "text", "text"]
     assert content[0]["text"].startswith("Document `rec`") and content[2]["text"].startswith("Document `pe`")
-    assert content[1]["file"]["file_data"].startswith("data:application/pdf;base64,")
+    assert content[4]["cache_control"] == {"type": "ephemeral"}  # breakpoint right after the last PDF
+    # every call shares the same system message and documents; only the last line differs
+    for b in post.bodies[1:]:
+        assert b["messages"][0] == first["messages"][0] and b["messages"][1]["content"][:-1] == content[:-1]
+    assert len({b["messages"][1]["content"][-1]["text"] for b in post.bodies}) == 4
 
     again = extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post)
-    assert again.status.tolist() == ["cached", "no_pages"] and len(post.bodies) == 1
+    assert again.status.tolist() == ["cached", "no_pages"] and len(post.bodies) == 4
 
 
 def test_extractor_ids_are_safe_folder_names():
@@ -156,31 +182,34 @@ def test_extractor_ids_are_safe_folder_names():
 
 
 @pytest.mark.parametrize(
-    ("post", "error"),
+    ("response", "error"),
     [
-        (FakePost(ok(finish="length")), "length"),
-        (FakePost(ok(finish="content_filter")), "content_filter"),
-        (FakePost(ok(content='{"sponsor_icer": 1}')), "invalid_output"),
-        (FakePost(fail(400, "context_length_exceeded")), "context_length_exceeded"),
-        (FakePost(fail(402)), "http_402"),
-        (FakePost(fail(502, "provider_unavailable", status=200)), "provider_unavailable"),  # error after headers
+        (ok("features", finish="length"), "features: length"),
+        (ok("features", finish="content_filter"), "features: content_filter"),
+        (ok("features", content='{"pivotal_design": "rct_h2h"}'), "features: invalid_output"),
+        (fail(400, "context_length_exceeded"), "features: context_length_exceeded"),
+        (fail(402), "features: http_402"),
+        (fail(502, "provider_unavailable", status=200), "features: provider_unavailable"),  # error after headers
     ],
 )
-def test_failed_calls_are_recorded_and_retried_next_run(tmp_path, pages, post, error, monkeypatch):
-    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
+def test_a_failed_group_is_recorded_and_only_it_is_retried(tmp_path, pages, response, error):
     ex, cohort, out = extract.EXTRACTORS["a"], pd.DataFrame({"project": ["PC0195-000"]}), tmp_path / "out"
+    post = FakePost(features=[response] * 4)  # enough to outlast the retries
     assert extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post).status.tolist()[0].startswith(error)
-    assert json.loads(extract.out_path(ex, "PC0195-000", out).read_text())["extraction"] is None
-    extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=FakePost())
+    record = json.loads(extract.out_path(ex, "PC0195-000", out).read_text())
+    assert record["extraction"] is None and record["calls"]["icers"]["error"] is None
+
+    retry = FakePost()
+    extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=retry)
+    assert [group_of(b) for b in retry.bodies] == ["features"]
     assert json.loads(extract.out_path(ex, "PC0195-000", out).read_text())["error"] is None
 
 
-def test_rate_limits_are_retried_then_succeed(tmp_path, pages, monkeypatch):
-    monkeypatch.setattr(extract.time, "sleep", lambda _: None)
-    post = FakePost(fail(429, "rate_limit_exceeded"), fail(503), ok())
+def test_rate_limits_are_retried_then_succeed(tmp_path, pages):
+    post = FakePost(icers=[fail(429, "rate_limit_exceeded"), fail(503)])
     ex, cohort = extract.EXTRACTORS["a"], pd.DataFrame({"project": ["PC0195-000"]})
     assert extract.run(cohort, ex, pages_dir=pages, out_dir=tmp_path / "out", post=post).status.tolist() == ["ok"]
-    assert len(post.bodies) == 3
+    assert [group_of(b) for b in post.bodies] == ["icers", "icers", "icers", "stepwise", "features", "price"]
 
 
 def test_api_key_comes_from_env_or_dotenv(tmp_path, monkeypatch):

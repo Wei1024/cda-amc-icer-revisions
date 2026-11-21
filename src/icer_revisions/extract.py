@@ -1,5 +1,9 @@
 """Run one LLM extractor over reviews: each review's selected-page PDFs in, one validated record out.
 
+Each review takes four calls, one per field group (`schema.GROUPS`). Every call sends the same prefix, the
+instructions and the review's PDFs, with a cache breakpoint after the last PDF; only a short line naming the
+group follows it. So the first call writes the cache and the other three read the PDFs from it.
+
 Calls go through OpenRouter's chat completions API, so an extractor can be any model OpenRouter serves. Each
 extractor is a named model + effort setting, optionally pinned to one provider. Three settings keep the two
 extractors comparable:
@@ -11,8 +15,9 @@ extractors comparable:
   hash of the instructions and the JSON schema is part of the extractor id, so a change to either starts a fresh
   set of outputs instead of mixing old and new.
 
-One JSON file per review and extractor, under data/extractions/<extractor id>/. Re-runs skip reviews that already
-have a successful record. Comparing two extractors and adjudicating their disagreements are separate steps.
+One JSON file per review and extractor, under data/extractions/<extractor id>/, holding each call's output and
+the merged record. Re-runs skip reviews that are complete and repeat only the calls that failed. Comparing two
+extractors and adjudicating their disagreements are separate steps.
 """
 
 import base64
@@ -29,7 +34,7 @@ import requests
 from pydantic import ValidationError
 
 from . import config
-from .schema import Extraction
+from .schema import GROUPS, merge
 
 SPEC = config.ROOT / "docs" / "extraction-spec.md"
 URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -58,8 +63,19 @@ def instructions(spec: Path = SPEC) -> str:
 
 
 SYSTEM = instructions()
-SCHEMA = Extraction.model_json_schema()
-PROMPT_VERSION = hashlib.sha256((SYSTEM + json.dumps(SCHEMA, sort_keys=True)).encode()).hexdigest()[:8]
+SECTIONS = {"icers": "§2.1 and §2.2", "stepwise": "§2.3", "features": "§2.4", "price": "§2.5"}
+
+
+def _group_prompt(group: str) -> str:
+    fields = ", ".join(f for f in GROUPS[group].model_fields if f not in ("evidence", "notes"))
+    return (
+        f"Fill the `{group}` fields (spec {SECTIONS[group]}): {fields}. Give evidence and notes for these fields only."
+    )
+
+
+GROUP_PROMPTS = {g: _group_prompt(g) for g in GROUPS}
+SCHEMAS = {g: m.model_json_schema() for g, m in GROUPS.items()}
+PROMPT_VERSION = hashlib.sha256(json.dumps([SYSTEM, GROUP_PROMPTS, SCHEMAS], sort_keys=True).encode()).hexdigest()[:8]
 
 MAX_PDF_BYTES = 22_000_000  # all documents together; base64 adds a third
 DOC_LABELS = {"rec": "Recommendation", "pe": "Economic report", "clin": "Clinical report"}
@@ -103,29 +119,31 @@ def review_docs(pages_dir: Path, project: str) -> dict[str, Path]:
     return {k: p for k in DOC_LABELS if (p := pages_dir / project / f"{k}.pdf").exists()}
 
 
-def request_body(extractor: Extractor, project: str, docs: dict[str, Path]) -> dict:
-    content = []
+def document_parts(docs: dict[str, Path]) -> list[dict]:
+    """The labelled PDFs, ending in a cache breakpoint. Built once per review, so every call's prefix is identical."""
+    parts = []
     for kind, path in docs.items():
         data = base64.standard_b64encode(path.read_bytes()).decode()
-        content.append({"type": "text", "text": f"Document `{kind}`: {DOC_LABELS[kind]}"})
-        content.append(
+        parts.append({"type": "text", "text": f"Document `{kind}`: {DOC_LABELS[kind]}"})
+        parts.append(
             {"type": "file", "file": {"filename": f"{kind}.pdf", "file_data": f"data:application/pdf;base64,{data}"}}
         )
-    content.append({"type": "text", "text": f"Review {project}: extract the record."})
+    parts.append({"type": "text", "text": "End of documents.", "cache_control": {"type": "ephemeral"}})
+    return parts
+
+
+def request_body(extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
     provider = {"require_parameters": True}
     if extractor.provider:
         provider |= {"order": [extractor.provider], "allow_fallbacks": False}
+    prompt = {"type": "text", "text": f"Review {project}. {GROUP_PROMPTS[group]}"}
     return {
         "model": extractor.model,
-        "messages": [
-            # the instructions are the same for every review, so they are cached (where the provider supports it)
-            {"role": "system", "content": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}]},
-            {"role": "user", "content": content},
-        ],
+        "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": [*documents, prompt]}],
         "plugins": [{"id": "file-parser", "pdf": {"engine": "native"}}],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "extraction", "strict": True, "schema": SCHEMA},
+            "json_schema": {"name": f"extraction_{group}", "strict": True, "schema": SCHEMAS[group]},
         },
         "provider": provider,
         "reasoning": {"effort": extractor.effort},
@@ -179,19 +197,15 @@ def _usage(data: dict) -> dict:
     }
 
 
-def extract_one(post: Post, extractor: Extractor, project: str, docs: dict[str, Path]) -> dict:
-    """Call the model once for one review. Always returns a record; `error` is set when there is no extraction."""
-    record = {"project": project, "extractor_id": extractor.id, "model": extractor.model, "documents": list(docs)}
-    if sum(p.stat().st_size for p in docs.values()) > MAX_PDF_BYTES:
-        return record | {"error": "pdf_too_large", "extraction": None}
-    status, data = _send(post, request_body(extractor, project, docs))
+def call_group(post: Post, extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
+    """One call for one field group: {output, error, and the call's metadata}."""
+    status, data = _send(post, request_body(extractor, project, group, documents))
     if "error" in data and not data.get("choices"):
         err = data["error"]
         kind = (err.get("metadata") or {}).get("error_type") or f"http_{err.get('code', status)}"
-        return record | {"error": f"{kind}: {err.get('message', '')[:300]}", "extraction": None}
-
+        return {"error": f"{kind}: {err.get('message', '')[:300]}", "output": None}
     choice = data["choices"][0]
-    record |= {
+    call = {
         "served_by": data.get("model"),
         "provider": data.get("provider"),
         "generation_id": data.get("id"),
@@ -199,12 +213,35 @@ def extract_one(post: Post, extractor: Extractor, project: str, docs: dict[str, 
         "usage": _usage(data),
     }
     if choice.get("finish_reason") != "stop":  # "length": output cut off; "content_filter": refused
-        return record | {"error": choice.get("finish_reason") or "no_finish_reason", "extraction": None}
+        return call | {"error": choice.get("finish_reason") or "no_finish_reason", "output": None}
     try:
-        parsed = Extraction.model_validate_json(choice["message"]["content"] or "")
+        parsed = GROUPS[group].model_validate_json(choice["message"]["content"] or "")
     except ValidationError as e:
-        return record | {"error": f"invalid_output: {e.error_count()} errors", "extraction": None}
-    return record | {"error": None, "extraction": parsed.model_dump(mode="json")}
+        return call | {"error": f"invalid_output: {e.error_count()} errors", "output": None}
+    return call | {"error": None, "output": parsed.model_dump(mode="json")}
+
+
+def extract_one(
+    post: Post, extractor: Extractor, project: str, docs: dict[str, Path], previous: dict | None = None
+) -> dict:
+    """All four calls for one review, reusing groups that succeeded in `previous`. Always returns a record;
+    `error` is set unless every group succeeded."""
+    record = {"project": project, "extractor_id": extractor.id, "model": extractor.model, "documents": list(docs)}
+    if sum(p.stat().st_size for p in docs.values()) > MAX_PDF_BYTES:
+        return record | {"error": "pdf_too_large", "calls": {}, "extraction": None}
+    calls = {g: c for g, c in ((previous or {}).get("calls") or {}).items() if c.get("error") is None}
+    documents = None
+    for group in GROUPS:
+        if group not in calls:
+            documents = documents or document_parts(docs)
+            calls[group] = call_group(post, extractor, project, group, documents)
+    errors = [f"{g}: {c['error']}" for g, c in calls.items() if c["error"]]
+    costs = [(c.get("usage") or {}).get("cost_usd") or 0 for c in calls.values()]
+    record |= {"calls": {g: calls[g] for g in GROUPS}, "cost_usd": round(sum(costs), 6)}
+    if errors:
+        return record | {"error": "; ".join(errors), "extraction": None}
+    parts = {g: GROUPS[g].model_validate(calls[g]["output"]) for g in GROUPS}
+    return record | {"error": None, "extraction": merge(parts).model_dump(mode="json")}
 
 
 def out_path(extractor: Extractor, project: str, out_dir: Path = config.EXTRACTIONS) -> Path:
@@ -233,12 +270,12 @@ def run(
         elif not docs:
             status = "no_pages"
         else:
-            record = extract_one(post, extractor, project, docs)
+            previous = json.loads(dest.read_text()) if dest.exists() else None
+            record = extract_one(post, extractor, project, docs, previous)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(json.dumps(record, indent=2))
             status = record["error"] or "ok"
-            cost = (record.get("usage") or {}).get("cost_usd") or 0
-            print(f"  {project}: {status} (${cost:.4f})")
+            print(f"  {project}: {status} (${record.get('cost_usd') or 0:.4f})")
         rows.append({"project": project, "status": status})
     summary = pd.DataFrame(rows)
     print(f"extract {extractor.id}: {summary.status.value_counts().to_dict()}")

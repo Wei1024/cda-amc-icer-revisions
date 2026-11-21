@@ -1,4 +1,9 @@
-"""The extraction output: one `Extraction` per review, as specified in docs/extraction-spec.md §2.
+"""The extraction output, as specified in docs/extraction-spec.md §2.
+
+Fields are extracted in four calls, one per group of related fields (`GROUPS`): the ICERs with costs and QALYs,
+the agency's stepwise changes, the submission features, and the price reduction. Each call returns its group's
+fields plus `evidence` and `notes`; the four are merged into one `Extraction` per review. Grouping keeps each call
+focused, and keeps each schema within Anthropic's limit of 16 fields that may be null or of several types.
 
 Each field's description is sent to the model as part of the JSON schema, so it states the field briefly and
 points to the spec's rule numbers; the rules themselves are in the prompt. Values computed in code (the ratio,
@@ -59,8 +64,9 @@ class Step(_Strict):
     icer_after: float | None = Field(description="ICER ($/QALY) after this step; null if not reported or dominant")
 
 
-class Extraction(_Strict):
-    # 2.1 The two ICERs (the outcome)
+class IcerFields(_Strict):
+    """Spec §2.1 the two ICERs, and §2.2 costs and QALYs."""
+
     sponsor_icer: float | None = Field(description="Sponsor's base-case ICER, $/QALY (rule 5)")
     sponsor_icer_status: IcerStatus
     agency_icer: float | None = Field(description="CDA-AMC base-case ICER, $/QALY; point estimate over range (rule 4)")
@@ -78,19 +84,25 @@ class Extraction(_Strict):
     analysis_type: Literal["cost_utility", "cost_minimization", "cost_comparison", "none", "unclear"]
     ratio_status: RatioStatus = Field(description="'ok' only if both ICERs are usable point estimates (rules 4, 8, 9)")
 
-    # 2.2 Costs and QALYs, same comparator as the ICERs
+    # costs and QALYs, same comparator as the ICERs
     inc_cost_sponsor: float | None = Field(description="Sponsor's incremental cost, $")
     inc_qaly_sponsor: float | None = Field(description="Sponsor's incremental QALYs")
     inc_cost_agency: float | None = Field(description="Agency's incremental cost, $")
     inc_qaly_agency: float | None = Field(description="Agency's incremental QALYs")
     inc_derived: bool = Field(description="True if computed from totals rather than stated")
 
-    # 2.3 The agency's stepwise changes (describe the critique; never model inputs)
+
+class StepwiseFields(_Strict):
+    """Spec §2.3 the agency's stepwise changes. They describe the critique and are never model inputs."""
+
     has_stepwise_table: bool = Field(description="The agency reports an ICER after each change")
     stepwise_type: Literal["cumulative", "individual"] | None
     steps: list[Step] = Field(description="Rows of the stepwise table, in order; empty if there is none")
 
-    # 2.4 Submission features: only what the sponsor knew at submission, never the agency's judgement of it
+
+class FeatureFields(_Strict):
+    """Spec §2.4 submission features: only what the sponsor knew at submission, never the agency's judgement."""
+
     pivotal_design: Literal["rct_h2h", "rct_placebo_or_other", "single_arm", "observational", "mixed", "unclear"]
     comparison_method: Literal["direct", "itc_nma", "naive", "assumption", "unclear"] = Field(
         description="For the primary comparator only; an NMA run but not used in the model is 'naive'"
@@ -115,13 +127,59 @@ class Extraction(_Strict):
     prevalence_kind: Literal["prevalence", "incidence", "eligible_patients"] | None
     prevalence_region: Literal["canada", "other", "not_stated"] | None
 
-    # 2.5 Price reduction
+
+class PriceFields(_Strict):
+    """Spec §2.5 the price reduction."""
+
     price_reduction_pct: float | None = Field(description="% cut needed to reach the threshold; lower end of a range")
     price_reduction_qualifier: Literal["exact", "at_least", "greater_than", "approximately", "range"] | None
     price_reduction_band: str | None = Field(description="The band label, if the review gives one")
     price_reduction_status: Literal["pct", "band", "not_needed", "no_pct_specified", "not_achievable", "not_reported"]
     wtp_threshold: float | None = Field(description="Willingness-to-pay threshold, $/QALY; usually 50000")
 
-    # 2.6 On every record
-    evidence: list[Evidence] = Field(description="Up to 4 quotes, for the fields that are not obvious")
+
+class _Audit(_Strict):
+    """Spec §2.6: returned by every call."""
+
+    evidence: list[Evidence] = Field(description="Up to 4 quotes, for the fields of this call that are not obvious")
     notes: str = Field(description="Judgement calls, with the rule number; populations or comparators not used")
+
+
+class IcerCall(IcerFields, _Audit):
+    pass
+
+
+class StepwiseCall(StepwiseFields, _Audit):
+    pass
+
+
+class FeatureCall(FeatureFields, _Audit):
+    pass
+
+
+class PriceCall(PriceFields, _Audit):
+    pass
+
+
+GROUPS: dict[str, type[_Audit]] = {
+    "icers": IcerCall,
+    "stepwise": StepwiseCall,
+    "features": FeatureCall,
+    "price": PriceCall,
+}
+
+
+class Extraction(IcerFields, StepwiseFields, FeatureFields, PriceFields, _Audit):
+    """One review's merged record: every group's fields, all evidence, and the notes of each call."""
+
+
+def merge(parts: dict[str, _Audit]) -> Extraction:
+    """Combine one validated output per group into the review's record."""
+    fields, evidence, notes = {}, [], []
+    for name, part in parts.items():
+        data = part.model_dump()
+        evidence += data.pop("evidence")
+        if note := data.pop("notes").strip():
+            notes.append(f"{name}: {note}")
+        fields |= data
+    return Extraction.model_validate(fields | {"evidence": evidence, "notes": "\n".join(notes)})
