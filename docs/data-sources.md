@@ -25,9 +25,10 @@ The export has quirks that the cohort step (`icer_revisions.listing`) handles:
 - three oncology reviews listed twice, once without documents. Rows are merged per project: 407 rows become 404
   reviews.
 
-## Choosing two documents per review
+## Choosing documents for each review
 The 404 reviews list 1,811 links between them (median 4, maximum 15). Two are kept per review
-(`icer_revisions.documents.pick_docs`):
+(`icer_revisions.documents.pick_docs`), plus a third for reviews whose economic report has no clinical section
+(`pick_clinical`):
 
 1. **Never used:** non-PDF links, stakeholder or sponsor feedback, patient and clinician input, supplements,
    conflict-of-interest forms, memos, funding algorithms, clinical-only reviews, procedural review panel reports,
@@ -39,6 +40,13 @@ The 404 reviews list 1,811 links between them (median 4, maximum 15). Two are ke
    - "pharmacoeconomic", "economic", "EGR", or a `####PE` suffix;
    - "combined" or "main report";
    - any remaining file not named like a recommendation.
+4. **Clinical report, only when the economic report covers economics only.** That is when the economic report is
+   named "pharmacoeconomic", "economic", "EGR" or `####PE`, and not "combined" or "clinical". In practice this is
+   2020 and early 2021: pCODR's Economic Guidance Reports and CDR's separate Pharmacoeconomic Review Reports.
+   During 2021 the agency moved to combined reports, which have a clinical section. The clinical report is
+   pCODR's Clinical Guidance Report (final `fnCGR` before initial `inCGR`), or CDR's Clinical Review Report
+   (`clinical-review-report`, or a `####CL` suffix). Feedback, input and COI files are never used. It is
+   needed for the trial fields: see the 2026-11-20 check below.
 
 ## Content check
 File names cannot be fully trusted, so every downloaded PDF is also checked against its contents
@@ -50,6 +58,7 @@ File names cannot be fully trusted, so every downloaded PDF is also checked agai
 | `no_recommendation_title` | a "rec" file whose first text does not name a recommendation or the committee |
 | `looks_like_recommendation` | a "pe" file whose first page is headed as a recommendation |
 | `no_economic_content` | a "pe" file with fewer than 5 economic-analysis terms (ICER, incremental cost, per QALY, cost-minimization, budget impact, ...) |
+| `no_clinical_title` | a "clin" file whose first three pages do not name a clinical guidance or clinical review report |
 | `unreadable` | PyMuPDF cannot open the file |
 
 ## Validation (2026-11-15, against the pilot's 806 downloaded PDFs)
@@ -73,3 +82,17 @@ File names cannot be fully trusted, so every downloaded PDF is also checked agai
   Recovering these would need another source, such as the review web page.
 - **Not a selection error:** many combined reports have no ICER because the review was a cost-minimization or
   cost-comparison analysis.
+
+## Clinical reports (2026-11-20)
+- **Why they are needed.** In 6 reviews from 2020 (3 oncology, 3 not), the economic reports give no trial details
+  outside their reference lists. The Recommendation gave trial design in 6, the primary endpoint in 5, and median
+  follow-up in only 1.
+- **Picks:** 78 reviews (57 from 2020, 21 from 2021) have an economic-only report, and all 78 list a clinical
+  report. PC0186 has only the initial CGR, which is used. SR0690 has a short (59-page) report, but it is
+  combined, so it correctly gets no clinical report.
+- **Download: 78 of 78 downloaded (178 MB, median 109 pages, 8,467 pages in all), and all 78 pass the content
+  check.**
+- **Coverage:** all 78 name a primary endpoint and describe the trial design, and 42 state a median follow-up,
+  compared with 1 of 6 Recommendations.
+- **Not included:** SR0663 lists only a clinical review report and no economic report, so it gets no clinical
+  row either.

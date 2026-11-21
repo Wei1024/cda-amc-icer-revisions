@@ -1,9 +1,14 @@
-"""Choose, download and sanity-check each review's Recommendation and economic report.
+"""Choose, download and sanity-check each review's documents.
 
-The economic report is the pharmacoeconomic review, the combined clinical + economic report, or, for
-pre-2022 pCODR reviews, the Economic Guidance Report (EGR). File names are inconsistent across years, so
-documents are picked by file-name rules (`pick_docs`), and every downloaded file is then checked against
-its first pages (`check_pdf`) so that a wrong pick is flagged in the manifest instead of passing silently.
+Every review has a Recommendation and an economic report. The economic report is the pharmacoeconomic
+review, the combined clinical + economic report, or, for pre-2022 pCODR reviews, the Economic Guidance
+Report (EGR). When the economic report covers economics only (most 2020-2021 reviews), the separate clinical
+report is fetched too (`pick_clinical`): pCODR's Clinical Guidance Report (CGR) or CDR's Clinical Review
+Report. It is the source of the trial fields.
+
+File names are inconsistent across years, so documents are picked by file-name rules (`pick_docs`,
+`pick_clinical`), and every downloaded file is then checked against its first pages (`check_pdf`) so that
+a wrong pick is flagged in the manifest instead of passing silently.
 The rules were derived from, and are regression-tested on, the 2020-2025 cohort's file names.
 """
 
@@ -33,7 +38,15 @@ ECONOMIC = [  # tried in order
     re.compile(r"pharmacoeconomic|economic|EGR(?![a-z])|\d{4}PE[-_ ]", re.I),
     re.compile(r"combined?|main[-_ ]?report|\d{4}r[-_]", re.I),
 ]
-KINDS = ("rec", "pe")
+# Clinical report, for reviews whose economic report has no clinical section. Final before initial (pCODR "inCGR").
+CLINICAL = re.compile(
+    r"(?<![a-z])(?:fn|in)?CGR(?![a-z])|clinical[-_ ]review[-_ ]report|clinical[-_ ]report|\d{4}CL[-_ ]", re.I
+)
+INITIAL_CGR = re.compile(r"(?<![a-z])inCGR", re.I)
+NOT_CLINICAL = re.compile(r"feedback|input|patient|clinician|clincian|COI|supplement|french", re.I)
+ECONOMIC_ONLY = re.compile(r"pharmac?o?economic|economic|EGR(?![a-z])|\d{4}PE[-_ ]", re.I)
+COMBINED = re.compile(r"combined?|clinical", re.I)
+KINDS = ("rec", "pe", "clin")
 USER_AGENT = "Mozilla/5.0 (compatible; icer-revisions/0.1; academic research)"
 
 
@@ -67,6 +80,20 @@ def pick_docs(urls: list[str]) -> tuple[str | None, str | None]:
     return rec, next((u for u in rest if not _matches(RECOMMENDATION, u)), None)
 
 
+def needs_clinical(pe_url: str | None) -> bool:
+    """True if the economic report is named as economics only, so the trial fields need the clinical report."""
+    return pe_url is not None and _matches(ECONOMIC_ONLY, pe_url) and not _matches(COMBINED, pe_url)
+
+
+def pick_clinical(urls: list[str], pe_url: str | None) -> str | None:
+    """The separate clinical report, only when `needs_clinical(pe_url)`; the final version before the initial one."""
+    if not needs_clinical(pe_url):
+        return None
+    pdfs = [u for u in urls if u.lower().endswith(".pdf") and "drush.in" not in u and u != pe_url]
+    found = [u for u in pdfs if _matches(CLINICAL, u) and not _matches(NOT_CLINICAL, u)]
+    return min(found, key=lambda u: _matches(INITIAL_CGR, u), default=None)
+
+
 # Content check, calibrated on the 2020-2025 cohort's PDFs (see docs/data-sources.md).
 REC_TITLE = re.compile(
     r"reimbursement recommendation|final recommendation|recommendation and reasons|pERC|"
@@ -82,6 +109,7 @@ ECONOMIC_TERMS = re.compile(
     re.I,
 )
 MIN_ECONOMIC_TERMS = 5
+CLINICAL_TITLE = re.compile(r"clinical guidance report|clinical review report|clinical review|clinical report", re.I)
 
 
 def check_pdf(path: Path, kind: str) -> str:
@@ -92,6 +120,9 @@ def check_pdf(path: Path, kind: str) -> str:
                 # first 400 characters of text; some pCODR files open with image-only cover pages
                 head = re.sub(r"\s+", " ", " ".join(doc[i].get_text() for i in range(min(5, len(doc))))).strip()
                 return "ok" if REC_TITLE.search(head[:400]) else "no_recommendation_title"
+            if kind == "clin":
+                head = re.sub(r"\s+", " ", " ".join(doc[i].get_text() for i in range(min(3, len(doc))))).strip()
+                return "ok" if CLINICAL_TITLE.search(head[:600]) else "no_clinical_title"
             title = re.sub(r"\s+", " ", doc[0].get_text())[:250] if len(doc) else ""
             if REC_HEADING.search(title):
                 return "looks_like_recommendation"
@@ -155,7 +186,11 @@ def download(
     rows = []
     for i, r in enumerate(cohort.itertuples(), 1):
         urls = r.doc_urls.split() if isinstance(r.doc_urls, str) else []
-        for kind, url in zip(KINDS, pick_docs(urls), strict=True):
+        rec_url, pe_url = pick_docs(urls)
+        picks = {"rec": rec_url, "pe": pe_url}
+        if needs_clinical(pe_url):  # other reviews get no clinical row
+            picks["clin"] = pick_clinical(urls, pe_url)
+        for kind, url in picks.items():
             dest = pdf_path(r.project, kind, pdf_dir)
             if url is None:
                 status = "not_listed"

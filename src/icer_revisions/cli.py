@@ -10,7 +10,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="step", required=True)
     sub.add_parser("cohort", help="parse the listing export and write the study cohort")
     for name, help_ in (
-        ("download", "download each review's Recommendation and economic report"),
+        ("download", "download each review's Recommendation, economic report and, where needed, clinical report"),
         ("excerpts", "convert PDFs to text and cut one excerpt per review"),
         ("all", "run cohort, download and excerpts in order"),
     ):

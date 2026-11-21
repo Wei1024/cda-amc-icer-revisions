@@ -3,7 +3,7 @@
 import pymupdf
 import pytest
 
-from icer_revisions.documents import check_pdf, pick_docs
+from icer_revisions.documents import check_pdf, pick_clinical, pick_docs
 
 CDA = "https://www.cda-amc.ca/sites/default/files"
 CADTH = "https://www.cadth.ca/sites/default/files"
@@ -67,6 +67,58 @@ def test_no_documents():
     assert pick_docs(["https://example.org/page.html"]) == (None, None)
 
 
+def test_pcodr_final_cgr_for_an_egr():
+    pcodr = f"{CDA}/pcodr/Reviews2020/10185PembrolizumabRCC"
+    egr = f"{pcodr}_fnEGR_NOREDACT-ABBREV_Post02Apr2020_final.pdf"
+    final_cgr = f"{pcodr}_fnCGR_REDACT_Post02Apr2020_final.pdf"
+    urls = [
+        f"{pcodr}_inCGR_NOREDACT_Post30Jan2020_final.pdf",  # listed first, but superseded
+        final_cgr,
+        egr,
+        f"{pcodr}_ClinicianFeedback_CCOGUDAC_Post02Apr2020_final_Redacted.pdf",
+        f"{pcodr}_Combined_Clinician_COIs_Post02Apr2020_final.pdf",
+    ]
+    assert pick_clinical(urls, egr) == final_cgr
+
+
+def test_pcodr_initial_cgr_when_no_final():  # PC0186
+    pcodr = f"{CDA}/pcodr/Reviews2020/10186CabozantinibHCC"
+    egr = f"{pcodr}_fnEGR_NOREDACT-ABBREV_EC_22Apr2020_final.pdf"
+    initial = f"{pcodr}_inCGR_NOREDACT_EC_22Apr2020_final.pdf"
+    assert pick_clinical([egr, initial, f"{pcodr}_Combined ClinicianFeedback_EC_22Apr2020_final.pdf"], egr) == initial
+
+
+@pytest.mark.parametrize(
+    ("pe", "clinical"),
+    [
+        ("sr0631-mayzent-pharmacoeconomic-review-report.pdf", "sr0631-mayzent-clinical-review-report.pdf"),
+        ("sr0655PE-corzyna.pdf", "sr0655CL-corzyna.pdf"),
+        (
+            "SR0652 Zeposia - Final Pharmacoeconomic Review Report.pdf",
+            "SR0652 Zeposia - Final Clinical Review Report.pdf",
+        ),
+    ],
+)
+def test_cdr_clinical_review_report(pe, clinical):
+    base = f"{CDA}/attachments/2020-06"
+    assert pick_clinical([f"{base}/{clinical}", f"{base}/{pe}"], f"{base}/{pe}") == f"{base}/{clinical}"
+
+
+@pytest.mark.parametrize(
+    "pe",
+    [
+        "sr0647-entyvio-clinical-economic-review-report.pdf",
+        "SR0690-Opsynvi_combined.pdf",
+        "PC0407-Voranigo_Main_Report.pdf",
+    ],
+)
+def test_no_clinical_report_when_the_economic_report_is_combined(pe):
+    base = f"{CDA}/DRR/2021"
+    urls = [f"{base}/{pe}", f"{base}/sr0647-entyvio-clinical-review-report.pdf"]
+    assert pick_clinical(urls, f"{base}/{pe}") is None
+    assert pick_clinical(urls, None) is None
+
+
 def _pdf(path, pages):
     doc = pymupdf.open()
     for text in pages:
@@ -92,6 +144,9 @@ def _pdf(path, pages):
         ),
         (["CADTH Reimbursement Recommendation Drug X", "cost-effectiveness"], "pe", "looks_like_recommendation"),
         (["Patient Group Input Submission"], "pe", "no_economic_content"),
+        (["pan-Canadian Oncology Drug Review", "Final Clinical Guidance Report"], "clin", "ok"),
+        (["CADTH Common Drug Review", "Clinical Review Report Drug X"], "clin", "ok"),
+        (["Pharmacoeconomic Review Report Drug X"], "clin", "no_clinical_title"),
     ],
 )
 def test_check_pdf(tmp_path, pages, kind, expected):

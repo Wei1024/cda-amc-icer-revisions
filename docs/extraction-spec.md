@@ -19,7 +19,7 @@ being designed (§1).
 | | what | status |
 |---|---|---|
 | Reviews | One record per CDA-AMC project number (one drug × indication). Recommendation dated 2020-01-01 to 2025-12-31, prefix `SR` (non-oncology) or `PC` (oncology): **404 reviews** (407 listing rows; three oncology reviews are listed twice and merged). Other prefixes (PH, PX, PG, SX, SG, ST, SF, TS) are not standard sponsor submissions and are excluded. | Done: `uv run icer cohort` |
-| Documents | Two per review: the Recommendation, and the economic or combined clinical + economic report (for pre-2022 pCODR reviews, the Economic Guidance Report). Chosen by `icer_revisions.documents.pick_docs`; see [data-sources.md](data-sources.md). | Done: `uv run icer download`, 805 PDFs |
+| Documents | The Recommendation, and the economic or combined clinical + economic report (for pre-2022 pCODR reviews, the Economic Guidance Report). When the economic report covers economics only (78 reviews, 2020–2021), also the separate clinical report, which is the source of the trial fields. Chosen by `icer_revisions.documents`; see [data-sources.md](data-sources.md). | Done: `uv run icer download` |
 | Pages | The pages that hold the fields below, sent to the LLM as PDF pages or images so tables keep their layout. The text layer is kept for checking quotes. | Being designed; replaces the text excerpts from the pilot |
 
 ## 2. Output: one record per review
@@ -67,6 +67,7 @@ These describe the agency's critique, so they are used to describe revisions, **
 
 **Leakage rule:** a feature must be something the sponsor knew on the day it submitted. Extract descriptions of
 the trial and of the sponsor's model, never the agency's judgement of them ("CDA-AMC considered X implausible").
+Trial fields come from the clinical section of a combined report, or from the separate clinical report.
 
 | field | values | rule | pilot |
 |---|---|---|---|

@@ -51,7 +51,7 @@ uv sync
 
 ```bash
 uv run icer cohort      # parse the listing export -> data/interim/cohort.csv (404 reviews)
-uv run icer download    # Recommendation + economic report PDFs -> data/pdfs/ (~800 files, ~3 GB), content-checked
+uv run icer download    # Recommendation, economic and (2020-21) clinical report PDFs -> data/pdfs/ (~880 files, ~3 GB), content-checked
 uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/
 uv run icer all         # all three in order
 ```

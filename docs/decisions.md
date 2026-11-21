@@ -21,6 +21,7 @@ Each entry: what was decided, why, and what it replaced.
 | [D11](#d11-statistics-first-prediction-as-a-check) | 2026-11-20 | Statistics first, prediction as a check |
 | [D12](#d12-three-hypotheses-stated-in-advance) | 2026-11-20 | Three hypotheses stated in advance |
 | [D13](#d13-codebook-split-into-three-files) | 2026-11-20 | Codebook split into three files |
+| [D14](#d14-clinical-reports-for-economic-only-reviews) | 2026-11-20 | Clinical reports added for economic-only reviews |
 
 Not decided yet: [ideas on hold](#ideas-on-hold).
 
@@ -111,6 +112,16 @@ also refitted without the pilot reviews.
 **Decided:** `docs/codebook.md` became the extraction spec, the analysis plan, and this log.
 **Why:** one file was doing three jobs: what to build, what to test, and why. Separating them makes the spec easy
 to build from and keeps past decisions on record without cluttering it.
+
+### D14. Clinical reports for economic-only reviews
+**Decided:** for the 78 reviews (2020–2021) whose economic report covers economics only, also download the
+separate clinical report (pCODR's Clinical Guidance Report or CDR's Clinical Review Report).
+**Replaced:** two documents per review, with the trial fields taken from the Recommendation's short clinical
+summary for those years.
+**Considered:** accepting the gaps. In 6 reviews from 2020, the Recommendation gave trial design in 6 and the
+primary endpoint in 5, but median follow-up in only 1. Gaps that fall only on early years are harder to treat as
+missing at random, and the fuller clinical reports also firm up the fields behind H1 and H3. Downloading them
+took minutes, and page selection needs one more rule (take the clinical report's executive summary).
 
 ## Ideas on hold
 
