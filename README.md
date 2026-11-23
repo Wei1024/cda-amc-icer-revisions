@@ -32,7 +32,7 @@ cases), then the [analysis plan](docs/analysis-plan.md) (hypotheses and models, 
 | Cohort, document download | Done (this repo) |
 | Page selection | Done: one PDF per document of the pages extraction reads, so tables keep their layout ([docs/extraction-spec.md](docs/extraction-spec.md) §1.1) |
 | LLM extraction | Runner built: four grouped calls per review through OpenRouter, PDFs cached, replies validated; tested with Sonnet 5.5 on four reviews, every stepped-table number matching the PDFs ([docs/extraction-spec.md](docs/extraction-spec.md) §1.2) |
-| Second extractor, comparison, adjudication, automatic checks | Quote check and local viewer built; Gemini 4 Carbon tried on one review; extractor B, comparison and adjudication not started. Next is the 20-review precision check ([docs/extraction-spec.md](docs/extraction-spec.md) §5) |
+| Second extractor, comparison, adjudication, automatic checks | Quote check and local viewer built; Gemini 4 Hydrogen, the lead candidate for extractor B, tested on four reviews; comparison and adjudication not started. Next is the 20-review precision check ([docs/extraction-spec.md](docs/extraction-spec.md) §5) |
 | Validation, statistical analysis, write-up | Not started; planned in [docs/analysis-plan.md](docs/analysis-plan.md) |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
@@ -64,9 +64,10 @@ uv run icer view PC0195-000   # local viewer: the PDFs beside each extractor's f
 ```
 
 `extract` runs one extractor, named in `EXTRACTORS` in `src/icer_revisions/extract.py`: `a` is Claude Opus 5.5, and
-`sonnet-test`, `haiku-test` and `carbon-test` (Gemini 4 Carbon) are for trying things out. It takes `--projects` and
-`--limit`, needs `OPENROUTER_API_KEY` in `.env`, and is not part of `all` because it costs money (about $0.50 per
-review with Sonnet 5.5). It prints each call as it finishes and saves after every call; re-runs skip finished
+`sonnet-test`, `haiku-test`, `carbon-test` and `hydrogen-test` (Gemini 4) are for trying things out. It takes
+`--projects` and `--limit`, needs `OPENROUTER_API_KEY` in `.env`, and is not part of `all` because it costs money
+(about $0.55 per review with Sonnet 5.5, $0.25 with Gemini 4 Hydrogen). A review's four calls are one conversation,
+so the PDFs are read from the cache after the first. It prints each call as it finishes and saves after every call; re-runs skip finished
 reviews and repeat only failed calls.
 
 `view` starts a small web server on this machine only and opens the browser. The selected pages are on the left;
@@ -100,7 +101,7 @@ src/icer_revisions/
   pages.py             page selection: the TARGETS rules table, one PDF per document
   excerpts.py          PDF to text, cue-based excerpting (temporary; replaced by pages.py)
   schema.py            the extraction output (pydantic) in four field groups, from docs/extraction-spec.md §2
-  extract.py           runs one LLM extractor via OpenRouter: four grouped calls per review, PDFs cached
+  extract.py           runs one LLM extractor via OpenRouter: four grouped calls per review as one conversation
   locate.py            finds each evidence quote in the PDFs: its page and the boxes around it
   view.py, viewer/     the local viewer (`icer view`): a small server, and one HTML page using PDF.js
   cli.py               the `icer` command

@@ -97,7 +97,7 @@ USAGE = {
 
 
 def group_of(body):
-    return re.search(r"Fill the `(\w+)` fields", body["messages"][1]["content"][-1]["text"]).group(1)
+    return re.search(r"Fill the `(\w+)` fields", body["messages"][-1]["content"][-1]["text"]).group(1)
 
 
 def ok(group, content=None, finish="stop"):
@@ -171,7 +171,7 @@ def test_instructions_carry_the_spec_rules():
     assert len(extract.PROMPT_VERSION) == 8
 
 
-def test_run_makes_one_call_per_group_with_a_shared_cached_prefix(tmp_path, pages):
+def test_run_makes_one_call_per_group_as_one_conversation(tmp_path, pages):
     ex, post, cohort = extract.EXTRACTORS["a"], FakePost(), pd.DataFrame({"project": ["PC0195-000", "SR0001-000"]})
     out = tmp_path / "out"
     summary = extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post)
@@ -191,14 +191,17 @@ def test_run_makes_one_call_per_group_with_a_shared_cached_prefix(tmp_path, page
     assert [c["type"] for c in content] == ["text", "file", "text", "file", "text", "text"]
     assert content[0]["text"].startswith("Document `rec`") and content[2]["text"].startswith("Document `pe`")
     assert content[4]["cache_control"] == {"type": "ephemeral"}  # breakpoint right after the last PDF
-    # every call shares the same system message and documents; only the last line differs
-    for b in post.bodies[1:]:
-        assert b["messages"][0] == first["messages"][0] and b["messages"][1]["content"][:-1] == content[:-1]
-    assert len({b["messages"][1]["content"][-1]["text"] for b in post.bodies}) == 4
+    # one conversation: each request is the previous one plus its answer and the next question, so it extends it
+    for before, after in zip(post.bodies, post.bodies[1:], strict=False):
+        n = len(before["messages"])
+        assert after["messages"][:n] == before["messages"]
+        assert after["messages"][n]["role"] == "assistant" and json.loads(after["messages"][n]["content"])
+        assert after["messages"][n + 1]["content"] == [after["messages"][-1]["content"][0]]  # question only, no PDFs
+    assert [len(b["messages"]) for b in post.bodies] == [2, 4, 6, 8]
     assert "response_format" not in first  # a per-call schema there would invalidate the cache
     assert (
         json.dumps(GROUPS["price"].model_json_schema(), separators=(",", ":"))
-        in post.bodies[3]["messages"][1]["content"][-1]["text"]
+        in post.bodies[3]["messages"][-1]["content"][-1]["text"]
     )
 
     again = extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post)
@@ -243,6 +246,10 @@ def test_a_failed_group_is_recorded_and_only_it_is_retried(tmp_path, pages, resp
     retry = FakePost()
     extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=retry)
     assert [group_of(b) for b in retry.bodies] == ["features"]
+    # the retried call comes after the groups that succeeded, which stay in the conversation; the PDFs come first
+    (body,) = retry.bodies
+    assert [m["role"] for m in body["messages"]] == ["system", "user", "assistant", "user", "assistant", "user"]
+    assert body["messages"][1]["content"][1]["type"] == "file"
     assert json.loads(extract.out_path(ex, "PC0195-000", out).read_text())["error"] is None
 
 

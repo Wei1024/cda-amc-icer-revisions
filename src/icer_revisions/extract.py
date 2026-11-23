@@ -1,11 +1,17 @@
 """Run one LLM extractor over reviews: each review's selected-page PDFs in, one validated record out.
 
-Each review takes four calls, one per field group (`schema.GROUPS`). Every call sends the same prefix, the
-instructions and the review's PDFs, with a cache breakpoint after the last PDF; only the final message, naming the
-group and giving its JSON schema, differs. So the first call writes the cache and the other three read the PDFs
-from it. The schema goes in that message rather than in `response_format`, because providers treat an output
-schema as part of the prompt prefix: a different schema per call would invalidate the cache (Anthropic documents
-this). The reply is validated against the schema in code, and an invalid reply fails that call.
+Each review takes four calls, one per field group (`schema.GROUPS`), made as one conversation: the first call
+sends the instructions, the review's PDFs (with a cache breakpoint after the last one) and the first group's
+question; each later call repeats everything before it, adds the previous answer and asks the next group's
+question. So every request contains the whole previous one, which is what both providers' caches need: Claude
+reads the PDFs from the cache after the breakpoint, and Gemini 4 caches a request only for one that extends it
+(sending four separate calls with a shared prefix gave Gemini no cache hits at all). Later groups also see the
+earlier answers, so for example the stepped table uses the comparator the ICER call chose.
+
+Each question gives its group's JSON schema in the message rather than in `response_format`, because providers
+treat an output schema as part of the prompt prefix: a different schema per call would invalidate the cache
+(Anthropic documents this). The reply is validated against the schema in code, and an invalid reply fails that
+call; a failed call is left out of the conversation, and a re-run repeats it after the groups that succeeded.
 
 Calls go through OpenRouter's chat completions API, so an extractor can be any model OpenRouter serves. Each
 extractor is a named model + effort setting, optionally pinned to one provider. Three settings keep the two
@@ -84,7 +90,10 @@ def _group_prompt(group: str) -> str:
 
 
 GROUP_PROMPTS = {g: _group_prompt(g) for g in GROUPS}
-PROMPT_VERSION = hashlib.sha256(json.dumps([SYSTEM, GROUP_PROMPTS], sort_keys=True).encode()).hexdigest()[:8]
+CALL_DESIGN = "conversation"  # the four calls as one conversation; part of the version, as it changes the inputs
+PROMPT_VERSION = hashlib.sha256(json.dumps([SYSTEM, GROUP_PROMPTS, CALL_DESIGN], sort_keys=True).encode()).hexdigest()[
+    :8
+]
 
 MAX_PDF_BYTES = 22_000_000  # all documents together; base64 adds a third
 DOC_LABELS = {"rec": "Recommendation", "pe": "Economic report", "clin": "Clinical report"}
@@ -103,12 +112,15 @@ class Extractor:
         return f"{self.name}-{self.model.replace('/', '_')}-{PROMPT_VERSION}"
 
 
-# Extractor B (a different model family, spec §5) is added here once it is chosen.
+# Extractor B (a different model family, spec §5) is added here once it is chosen; Hydrogen is the lead candidate.
 EXTRACTORS = {
     "a": Extractor("a", "anthropic/claude-opus-5.5", provider="anthropic"),
     "haiku-test": Extractor("haiku-test", "anthropic/claude-haiku-5.5", effort="medium", provider="anthropic"),
     "sonnet-test": Extractor("sonnet-test", "anthropic/claude-sonnet-5.5", effort="medium", provider="anthropic"),
-    "carbon-test": Extractor("carbon-test", "google/gemini-4-carbon", effort="medium", provider="google-vertex/global"),
+    "carbon-test": Extractor("carbon-test", "google/gemini-4-carbon", effort="medium", provider="google-ai-studio"),
+    "hydrogen-test": Extractor(
+        "hydrogen-test", "google/gemini-4-hydrogen", effort="medium", provider="google-ai-studio"
+    ),
 }
 
 
@@ -143,14 +155,23 @@ def document_parts(docs: dict[str, Path]) -> list[dict]:
     return parts
 
 
-def request_body(extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
+def question(project: str, group: str, documents: list[dict], first: bool) -> dict:
+    """The user message asking for one group; the conversation's first one carries the PDFs."""
+    prompt = {"type": "text", "text": f"Review {project}. {GROUP_PROMPTS[group]}"}
+    return {"role": "user", "content": [*documents, prompt] if first else [prompt]}
+
+
+def request_body(
+    extractor: Extractor, project: str, group: str, documents: list[dict], history: list[dict] = ()
+) -> dict:
+    """`history` is the conversation so far: earlier questions and their answers."""
     provider = {"require_parameters": True}
     if extractor.provider:
         provider |= {"order": [extractor.provider], "allow_fallbacks": False}
-    prompt = {"type": "text", "text": f"Review {project}. {GROUP_PROMPTS[group]}"}
+    ask = question(project, group, documents, first=not history)
     return {
         "model": extractor.model,
-        "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": [*documents, prompt]}],
+        "messages": [{"role": "system", "content": SYSTEM}, *history, ask],
         "plugins": [{"id": "file-parser", "pdf": {"engine": "native"}}],
         "provider": provider,
         "reasoning": {"effort": extractor.effort},
@@ -247,10 +268,12 @@ def _json_objects(content: str | None) -> list[str]:
     return out or [text.strip()]
 
 
-def call_group(post: Post, extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
+def call_group(
+    post: Post, extractor: Extractor, project: str, group: str, documents: list[dict], history: list[dict] = ()
+) -> dict:
     """One call for one field group: {output, error, and the call's metadata}."""
     start = time.monotonic()
-    status, data = _send(post, request_body(extractor, project, group, documents))
+    status, data = _send(post, request_body(extractor, project, group, documents, history))
     seconds = round(time.monotonic() - start, 1)
     if "error" in data and not data.get("choices"):
         err = data["error"]
@@ -297,18 +320,23 @@ def extract_one(
     if sum(p.stat().st_size for p in docs.values()) > MAX_PDF_BYTES:
         return record | {"error": "pdf_too_large", "calls": {}, "extraction": None}
     calls = {g: c for g, c in ((previous or {}).get("calls") or {}).items() if c.get("error") is None}
-    documents = None
+    documents = document_parts(docs) if any(g not in calls for g in GROUPS) else []
+    history: list[dict] = []
     for group in GROUPS:
-        if group not in calls:
-            documents = documents or document_parts(docs)
-            calls[group] = call = call_group(post, extractor, project, group, documents)
-            usage = call.get("usage") or {}
+        if group not in calls:  # a group that succeeded before is reused, and stays part of the conversation
+            calls[group] = call_group(post, extractor, project, group, documents, history)
+            usage = calls[group].get("usage") or {}
             print(
-                f"    {group}: {call['error'] or 'ok'} in {call.get('seconds', 0):.0f}s, "
+                f"    {group}: {calls[group]['error'] or 'ok'} in {calls[group].get('seconds', 0):.0f}s, "
                 f"${usage.get('cost_usd') or 0:.4f}, {usage.get('cached_tokens') or 0} cached tokens",
                 flush=True,
             )
             save(record | {"calls": dict(calls), "error": "incomplete", "extraction": None})
+        if calls[group]["error"] is None:  # a failed call is left out of the conversation
+            history += [
+                question(project, group, documents, first=not history),
+                {"role": "assistant", "content": json.dumps(calls[group]["output"])},
+            ]
     errors = [f"{g}: {c['error']}" for g, c in calls.items() if c["error"]]
     costs = [(c.get("usage") or {}).get("cost_usd") or 0 for c in calls.values()]
     record |= {"calls": {g: calls[g] for g in GROUPS}, "cost_usd": round(sum(costs), 6)}

@@ -217,6 +217,31 @@ threshold), to be fixed in the analysis plan before the data are examined. Categ
 (concomitant therapy, the comparator's response) is the likeliest source of disagreement; check it in the
 precision run.
 
+### D20. The four calls are one conversation
+**Decided:** a review's four group calls are made as one conversation: each call repeats the previous one, adds
+its answer and asks the next group's question, for every extractor ([extraction-spec.md](extraction-spec.md)
+§1.2). Gemini 4 Hydrogen is the lead candidate for extractor B.
+**Replaced:** four independent calls sharing the instructions and PDFs as a cached prefix (D17).
+**Why:**
+- *Gemini's cache never hit on separate calls.* Through OpenRouter, Gemini 4 wrote no cache for our cache marker,
+  wherever it was placed, and its automatic cache keeps a request only for one that contains it in full. Four
+  setups (AI Studio, Vertex, the marker on the PDF, Hydrogen) gave 0 cached tokens in 16 calls, at $0.64–1.04 per
+  review. As one conversation, Hydrogen's calls 2–4 read 83k–109k tokens from the cache: $0.24–0.30 per review,
+  less than Sonnet's $0.53–0.63 (2026-11-22, PC0195, PC0330, SR0685, PC0350).
+- *Consistency within a review.* Later groups see earlier answers, so the stepped table and the ICERs use the
+  same comparator.
+- *The same design for both extractors*, so their disagreements come from the models, not the set-up. Claude's
+  cache still works, at a small cost for re-reading the earlier answers.
+**Trade-off:** a mistake in an early group can carry into later ones within an extractor; the two extractors
+remain independent, which is what the agreement check relies on.
+**Considered:** one call per review for Gemini only (no cache needed, but against the grouped design and
+different from extractor A), and Google's half-price "flex" tier, still worth testing for the full run.
+**Hydrogen on four reviews:** every stepped-table number matched Sonnet's; 175 of 192 other fields agreed. The
+rest were wording, rounding, `os_median_reached_trt` (where Hydrogen matched the reports and Sonnet did not), and
+rules the spec leaves open: a price cut on a two-drug regimen (PC0330), recording an exploratory agency ICER
+when there is no base case (SR0685), `mixed` designs, what counts as a resubmission, and pairwise versus
+sequential ICERs. Fix those rules before the precision check.
+
 ## Ideas on hold
 
 - **Adding 2026 reviews.** Open.

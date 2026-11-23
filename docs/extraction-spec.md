@@ -8,7 +8,7 @@ The output schema is `src/icer_revisions/schema.py` and the runner is `src/icer_
 through OpenRouter: native PDF input, four grouped calls per review with the PDFs cached, and replies validated
 against the schema (§1.2).
 
-**Still open:** extractor B (a different model family; Gemini 4 Carbon tested on one review, §1.2) and the adjudicator; the comparison and
+**Still open:** extractor B (a different model family; Gemini 4 Hydrogen is the lead candidate, §1.2) and the adjudicator; the comparison and
 automatic-check code (§5); and whether to use OpenRouter's half-price batch models for the full run.
 
 **Contents**
@@ -79,12 +79,19 @@ Each review is extracted in **four calls, one per group of fields**: `icers` (§
 `features` (§2.4) and `price` (§2.5). Each call returns its group's fields plus `evidence` and `notes`, and the four
 are merged into one record. The calls are made one after another, through OpenRouter.
 
-- **The PDFs are cached across the four calls.** Every call sends the same instructions and the same labelled
-  PDFs, with a cache breakpoint after the last PDF. Only the final message differs: it names the group and gives
-  that group's JSON schema. The first call writes the cache; the other three read the PDFs from it.
+- **The four calls are one conversation.** The first call sends the instructions, the labelled PDFs (with a cache
+  breakpoint after the last one) and the first group's question, which names the group and gives its JSON schema.
+  Each later call repeats everything before it, adds the previous answer and asks the next question. Later
+  groups therefore see the earlier answers, so the stepped table uses the comparator the ICER call chose; a
+  mistake in an early group can also carry forward. The two extractors stay independent of each other.
+- **The PDFs are cached across the four calls.** Because each request contains the whole previous one, both
+  providers' caches work: Claude reads the PDFs after the breakpoint, and Gemini 4, which caches a request only
+  for one that extends it, does too. With four separate calls sharing only the PDFs, Gemini had no cache hits in
+  16 calls (D20).
 - **The schema goes in the final message, not in `response_format`.** Providers treat an output schema as part
   of the prompt prefix, so a different schema per call would invalidate the cache. The reply is validated against
-  the schema in code; an invalid reply fails that call, and a re-run repeats only the calls that failed.
+  the schema in code; an invalid reply fails that call and is left out of the conversation, and a re-run repeats
+  only the calls that failed, after the groups that succeeded.
 - **Why four groups.** Each call stays focused on related fields. The split began with Anthropic's limit of 16
   fields that may be null when a schema is enforced; with the schema in the prompt that limit no longer applies,
   and the stepped-analysis group now exceeds it (D17, D19).
@@ -109,6 +116,10 @@ Test runs on PC0195 (one review, so a first look only):
 The new stepped-analysis schema was then run with Sonnet 5.5 on four reviews chosen for their table shapes
 (PC0195, PC0330, SR0685, PC0350): $0.53–0.63 and under a minute per review, calls 2–4 reading the PDFs from the
 cache, and every cost, QALY and ICER in the four tables matched the PDFs (D19).
+
+Gemini 4 Hydrogen as one conversation, on the same four reviews: $0.24–0.30 and about a minute per review, calls
+2–4 reading 83k–109k tokens from the cache. Every stepped-table number matched Sonnet's, and 175 of 192 other
+fields agreed; most differences were wording, rounding or rules the spec leaves open (D20).
 
 Replies are streamed, so a stalled connection is caught rather than waited out, and each review's record is saved
 after every call. A reply that fails validation is kept with the reason, so it can be read.
