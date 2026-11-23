@@ -49,13 +49,36 @@ def page_words(page: pymupdf.Page) -> list[tuple[str, tuple[float, float, float,
     return out
 
 
-def _match(words: list, quote: list[str]) -> tuple[float, list[int]]:
+def _in_order(words: list, index: list[int], tokens: list[str], label: list[str]) -> tuple[float, list[int]]:
+    """For a table row's label: its words in order, with other cells' words allowed in between, within a window
+    of a few times the label's length. Tried from each place the label's first or second word appears."""
+    window, best = 4 * len(label) + 8, (0, [])
+    starts = [i for i, t in enumerate(tokens) if t in label[:2]]
+    for start in starts:
+        hit, j = [], label.index(tokens[start])
+        for i in range(start, min(start + window, len(tokens))):
+            if j < len(label) and tokens[i] == label[j]:
+                hit.append(i)
+                j += 1
+        if len(hit) > len(best[1]):
+            best = (j, hit)
+    covered = [index[i] for i in best[1]]
+    return len(best[1]) / len(label), covered
+
+
+def _match(words: list, quote: list[str], skip_numbers: bool = False) -> tuple[float, list[int]]:
     """Share of the quote's words found in order on the page, and the page word indices they cover."""
+    if skip_numbers:
+        quote = [t for t in quote if not t.isdigit()]
     if not quote:
         return 0.0, []
-    tokens = [w for w, _, _ in words]
-    blocks = SequenceMatcher(None, tokens, quote, autojunk=False).get_matching_blocks()
-    blocks = [b for b in blocks if b.size >= 2 or (b.size == 1 and len(quote) == 1)]  # ignore stray single words
+    # page words that can match: not the second halves of hyphenated words, and with `skip_numbers` no numbers,
+    # since a table row's label is broken up by the figures of the rows beside it
+    index = [i for i, (w, _, _) in enumerate(words) if w and not (skip_numbers and w.isdigit())]
+    tokens = [words[i][0] for i in index]
+    if skip_numbers:
+        return _in_order(words, index, tokens, quote)
+    blocks = [b for b in SequenceMatcher(None, tokens, quote, autojunk=False).get_matching_blocks() if b.size]
     if not blocks:
         return 0.0, []
     # keep the densest run: blocks close together on the page, so a quote is not stitched from far-apart words
@@ -67,10 +90,14 @@ def _match(words: list, quote: list[str]) -> tuple[float, list[int]]:
             runs.append(run)
             run = [b]
     runs.append(run)
+    # a run needs two words in a row somewhere, so stray single words never make a match on their own
+    runs = [r for r in runs if len(quote) == 1 or any(b.size >= 2 for b in r)]
+    if not runs:
+        return 0.0, []
     best = max(runs, key=lambda r: sum(b.size for b in r))
-    covered = [i for b in best for i in range(b.a, b.a + b.size)]
+    covered = [index[i] for b in best for i in range(b.a, b.a + b.size)]
     # include the trailing halves of hyphenated words inside the match
-    covered += [i + 1 for i in covered if i + 1 < len(tokens) and tokens[i + 1] == ""]
+    covered += [i + 1 for i in covered if i + 1 < len(words) and words[i + 1][0] == ""]
     return sum(b.size for b in best) / len(quote), sorted(set(covered))
 
 
@@ -87,8 +114,9 @@ def _boxes(words: list, covered: list[int]) -> list[list[float]]:
     return [[round(v, 1) for v in b] for b in lines.values()]
 
 
-def locate(quote: str, doc: pymupdf.Document, page: int, cache: dict | None = None) -> dict:
-    """Where `quote` is in `doc`, trying the cited `page` (1-based) first."""
+def locate(quote: str, doc: pymupdf.Document, page: int, cache: dict | None = None, skip_numbers: bool = False) -> dict:
+    """Where `quote` is in `doc`, trying the cited `page` (1-based) first. `skip_numbers` is for table row labels:
+    numbers are ignored on both sides, since the label's words are interleaved with the row's figures."""
     cache = {} if cache is None else cache
     tokens = [t for t in (_norm(w) for w in quote.split()) if t]
 
@@ -98,11 +126,11 @@ def locate(quote: str, doc: pymupdf.Document, page: int, cache: dict | None = No
         return cache[p]
 
     candidates = [page] if 1 <= page <= len(doc) else []
-    score, covered = _match(words(page), tokens) if candidates else (0.0, [])
+    score, covered = _match(words(page), tokens, skip_numbers) if candidates else (0.0, [])
     best = (score, page, covered)
     if score < FOUND:
         for p in range(1, len(doc) + 1):
-            if p != page and (s := _match(words(p), tokens))[0] > best[0]:
+            if p != page and (s := _match(words(p), tokens, skip_numbers))[0] > best[0]:
                 best = (s[0], p, s[1])
     score, found_page, covered = best
     if score >= FOUND:
@@ -128,14 +156,17 @@ def locate_all(evidence: list[dict], pages_dir: Path) -> list[dict]:
         for item in evidence:
             cited = item["document"]
             found = (
-                locate(item["quote"], docs[cited], item["page"], caches[cited])
+                locate(item["quote"], docs[cited], item["page"], caches[cited], item.get("table", False))
                 if cited in docs
                 else {"status": "no_document", "score": 0.0, "page_found": None, "boxes": []}
             )
             found["document_found"] = cited if found["page_found"] else None
             if found["status"] in ("not_found", "no_document"):
                 for kind, doc in docs.items():
-                    if kind != cited and (other := locate(item["quote"], doc, 0, caches[kind]))["score"] >= FOUND:
+                    if kind == cited:
+                        continue
+                    other = locate(item["quote"], doc, 0, caches[kind], item.get("table", False))
+                    if other["score"] >= FOUND:
                         found = other | {"status": "other_document", "document_found": kind}
                         break
             out.append(item | found)

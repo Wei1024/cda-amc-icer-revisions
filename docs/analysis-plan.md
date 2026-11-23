@@ -22,7 +22,7 @@ associations, not causal effects.
 | question | asks | outcome |
 |---|---|---|
 | Q1 Revision | How large is the revision, what kind of submission gets a larger one, and how much of the price cut does it account for? | Main: `log_ratio`. Secondary: `large_revision`, `crossed_threshold`. Price-cut split |
-| Q2 Mechanism | How much comes from costs vs QALYs, and from each type of agency change? | Cost vs QALY split; stepwise category contributions |
+| Q2 Mechanism | How much comes from costs vs QALYs, and from each type of agency change? | Cost vs QALY split; stepped-analysis category contributions |
 | Q3 Method | How reliable is LLM extraction from HTA reports? | Agreement between extractors; automatic check results |
 
 The secondary outcomes are coarser than the ratio, so they are less sensitive to noise in its exact size, and they
@@ -78,7 +78,12 @@ check, before the full run.
 - How excluding the `sponsor_dominant` reviews shifts the median.
 - Price-cut split, as medians and distributions. Cuts grouped as <50 / 50–75 / ≥75%, matching CDA-AMC's bands.
 - Cost vs QALY split, as medians and distributions.
-- Stepwise category contributions.
+- Stepped-analysis category contributions. **Method not yet chosen.** The tables apply each change on its own and
+  then all together, so single-change effects do not add up exactly to the combined one; the remainder is
+  reported as interaction. Candidates: each change's share of log(agency ICER / sponsor ICER), which fails when a
+  row's ICER is negative or dominated, or its effect on net monetary benefit at the threshold, which is always
+  defined. Both are computed from the extracted costs and QALYs (extraction spec §2.3); decide before the data
+  are examined.
 
 ## 5. Q1: models
 

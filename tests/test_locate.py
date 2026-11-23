@@ -63,6 +63,17 @@ def test_a_loose_quote_is_partial(review):
     assert hit["status"] == "partial" and hit["page_found"] == 2
 
 
+def test_a_table_row_label_is_found_between_the_cells_of_its_row(tmp_path):
+    # how a stepped table's text layer reads: the label's words are interleaved with the other cells
+    doc = pymupdf.open()
+    doc.new_page().insert_text(
+        (72, 72), "CADTH reanalysis BSC 39,810 5.51 Ref. 5: Durability of BSC UPA 15 85,131 6.40 51,113 response"
+    )
+    label = "CADTH reanalysis 5: Durability of BSC response"
+    assert locate.locate(label, doc, 1, skip_numbers=True)["status"] == "found"
+    assert locate.locate("CADTH reanalysis 6: Treatment waning", doc, 1, skip_numbers=True)["status"] == "not_found"
+
+
 def test_the_viewer_summary_shows_a_failed_review_with_its_finished_groups(tmp_path, review):
     out = tmp_path / "extractions" / "x-model-1234abcd"
     out.mkdir(parents=True)

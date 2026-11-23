@@ -1,7 +1,7 @@
 """The extraction output, as specified in docs/extraction-spec.md §2.
 
 Fields are extracted in four calls, one per group of related fields (`GROUPS`): the ICERs with costs and QALYs,
-the agency's stepwise changes, the submission features, and the price reduction. Each call returns its group's
+the agency's stepped analysis, the submission features, and the price reduction. Each call returns its group's
 fields plus `evidence` and `notes`; the four are merged into one `Extraction` per review. Grouping keeps each call
 focused, and keeps each schema within Anthropic's limit of 16 fields that may be null or of several types.
 
@@ -31,6 +31,7 @@ RatioStatus = Literal[
 ]
 StepCategory = Literal[
     "extrapolation_survival",
+    "treatment_effect",
     "treatment_effect_waning",
     "utilities",
     "time_horizon",
@@ -39,9 +40,11 @@ StepCategory = Literal[
     "treatment_duration",
     "other_costs",
     "population",
-    "model_structure_error",
+    "model_structure",
     "other",
 ]
+RowType = Literal["sponsor_base", "sponsor_corrected", "change", "combined"]
+IcerNote = Literal["point", "dominant", "dominated", "extended_dominance", "not_reported"]
 
 
 class _Strict(BaseModel):
@@ -59,11 +62,23 @@ class Evidence(_Strict):
     )
 
 
-class Step(_Strict):
-    order: int = Field(description="Position in the agency's stepwise table, from 1")
-    description: str = Field(description="What the agency changed, 15 words or fewer")
-    category: StepCategory
-    icer_after: float | None = Field(description="ICER ($/QALY) after this step; null if not reported or dominant")
+class StepRow(_Strict):
+    order: int = Field(description="Position in the table, from 1")
+    label: str = Field(description="The row's label, verbatim, without the drug names")
+    row_type: RowType = Field(description="Rule 13")
+    analysis: Literal["deterministic", "probabilistic", "not_stated"] = Field(
+        description="As the table or its footnote says for this row (rule 13)"
+    )
+    category: StepCategory | None = Field(description="For `change` rows only (rule 15); null otherwise")
+    multiple_changes: bool = Field(description="The row applies several changes that fall in different categories")
+    cost_drug: float | None = Field(description="Total cost ($) of the drug under review, as printed")
+    qaly_drug: float | None = Field(description="Total QALYs of the drug under review, as printed")
+    cost_comparator: float | None = Field(description="Total cost ($) of the comparator, as printed")
+    qaly_comparator: float | None = Field(description="Total QALYs of the comparator, as printed")
+    inc_cost: float | None = Field(description="Incremental cost, only if the table prints it instead of totals")
+    inc_qaly: float | None = Field(description="Incremental QALYs, only if the table prints them instead of totals")
+    icer: float | None = Field(description="ICER ($/QALY) as printed, negative values included; null if none")
+    icer_note: IcerNote
 
 
 class IcerFields(_Strict):
@@ -95,11 +110,16 @@ class IcerFields(_Strict):
 
 
 class StepwiseFields(_Strict):
-    """Spec §2.3 the agency's stepwise changes. They describe the critique and are never model inputs."""
+    """Spec §2.3 the agency's stepped analysis. It describes the critique and is never a model input."""
 
-    has_stepwise_table: bool = Field(description="The agency reports an ICER after each change")
-    stepwise_type: Literal["cumulative", "individual"] | None
-    steps: list[Step] = Field(description="Rows of the stepwise table, in order; empty if there is none")
+    has_stepped_table: bool = Field(description="The economic report has a stepped-analysis table (rule 13)")
+    table_title: str | None = Field(description="The table's title, verbatim")
+    table_document: Literal["rec", "pe", "clin"] | None
+    table_page: int | None = Field(description="Page of the table's first row within that attached document")
+    table_format: Literal["changes_then_combined", "cumulative", "other"] | None = Field(description="Rule 13")
+    table_drug: str | None = Field(description="The drug under review, as the table names it")
+    table_comparator: str | None = Field(description="The comparator taken from the table (rule 14)")
+    rows: list[StepRow] = Field(description="The table's rows for that pair, in order; empty if there is no table")
 
 
 class FeatureFields(_Strict):

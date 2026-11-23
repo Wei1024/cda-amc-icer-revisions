@@ -7,7 +7,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pd
 const $ = (s) => document.querySelector(s);
 const GROUP_TITLES = {
   icers: "ICERs, costs and QALYs",
-  stepwise: "Agency's stepwise changes",
+  stepwise: "Agency's stepped analysis",
   features: "Submission features",
   price: "Price reduction",
 };
@@ -43,16 +43,23 @@ function format(value) {
   if (value === null || value === undefined) return el("span", { class: "null" }, "—");
   if (Array.isArray(value)) {
     if (!value.length) return el("span", { class: "null" }, "none");
-    return el("ol", { class: "steps" }, value.map((s) =>
-      el("li", {}, `${s.description} `, el("span", { class: "muted" }, `[${s.category}]`),
-        s.icer_after === null ? "" : ` → $${s.icer_after.toLocaleString()}`)));
+    const money = (v) => (v === null || v === undefined ? "—" : `$${Math.round(v).toLocaleString()}`);
+    const qaly = (v) => (v === null || v === undefined ? "—" : v.toLocaleString());
+    return el("ol", { class: "steps" }, value.map((r) => el("li", {},
+      r.label, " ",
+      el("span", { class: "muted" }, `[${r.row_type}${r.category ? `: ${r.category}` : ""}]`),
+      el("div", { class: "muted" },
+        r.cost_drug !== null || r.cost_comparator !== null
+          ? `drug ${money(r.cost_drug)}, ${qaly(r.qaly_drug)} QALYs; comparator ${money(r.cost_comparator)}, ${qaly(r.qaly_comparator)} QALYs`
+          : `incremental ${money(r.inc_cost)}, ${qaly(r.inc_qaly)} QALYs`,
+        `; ICER ${money(r.icer)}${r.icer_note === "point" ? "" : ` (${r.icer_note})`}; ${r.analysis ?? ""}`))));
   }
   if (typeof value === "number") return document.createTextNode(value.toLocaleString());
   return document.createTextNode(String(value));
 }
 
 function chip(x, ev) {
-  const cited = `${ev.document} p.${ev.page}`;
+  const cited = `${ev.row ? `row ${ev.row}: ` : ""}${ev.document} p.${ev.page}`;
   const label = {
     other_page: `${cited} → p.${ev.page_found}`,
     other_document: `${cited} → ${ev.document_found} p.${ev.page_found}`,

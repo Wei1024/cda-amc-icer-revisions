@@ -139,13 +139,50 @@ mean nulls are expected, not that the extractor failed.
 | `inc_cost_agency`, `inc_qaly_agency` | number | Agency's incremental cost and QALYs |
 | `inc_derived` | bool | True if computed from totals rather than stated |
 
-### 2.3 The agency's stepwise changes
+### 2.3 The agency's stepped analysis
+
+Most economic reports from 2021 on have a table titled "Summary of the Stepped Analysis of the CADTH (or CDA-AMC)
+Reanalysis Results". It starts from the sponsor's base case, applies each of the agency's changes **on its own**,
+and ends with all the changes together, which is the agency's base case. Example, PC0330 (2024):
+
+| row | ICER |
+|---|---|
+| Sponsor's base case | $55,198 |
+| CADTH reanalysis 1: use of KM data when modelling OS and PFS | $54,172 |
+| CADTH reanalysis 2: choice of parametric distribution for OS | $97,546 |
+| CADTH reanalysis 3: treatment duration | $109,289 |
+| CADTH reanalysis 4: health state utility values | $58,191 |
+| CADTH base case (1 + 2 + 3 + 4), probabilistic | $195,000 |
+
+The table is copied as printed, row by row, for the drug under review and one comparator. How much each change
+contributes is computed afterwards, and the method is not yet chosen ([analysis-plan.md](analysis-plan.md) §4):
+keeping each row's costs and QALYs leaves every method open, including for rows whose ICER is negative or
+dominated, where an ICER alone is unusable.
 
 | field | values | notes |
 |---|---|---|
-| `has_stepwise_table` | bool | The agency reports an ICER after each change |
-| `stepwise_type` | `cumulative`, `individual` | Cumulative: each step builds on the last. Individual: each change applied alone |
-| `steps` | list of {`order`, `description`, `category`, `icer_after`} | `description` ≤ 15 words. `category` is one of: `extrapolation_survival`, `treatment_effect_waning`, `utilities`, `time_horizon`, `comparator`, `drug_costs_wastage_dosing`, `treatment_duration`, `other_costs`, `population`, `model_structure_error`, `other` |
+| `has_stepped_table` | bool | Rule 13 |
+| `table_title` | text | Verbatim |
+| `table_document`, `table_page` | `rec` / `pe` / `clin`, number | Where the table's first row is |
+| `table_format` | `changes_then_combined`, `cumulative`, `other` | Rule 13 |
+| `table_drug`, `table_comparator` | text | The pair taken from the table, as the table names them: rule 14 |
+| `rows` | list of rows, in table order | Empty if there is no table |
+
+Each row:
+
+| field | values | notes |
+|---|---|---|
+| `order` | number | From 1 |
+| `label` | text | The row's label, verbatim, without the drug names. Code finds it on the table's pages, so every row is checked |
+| `row_type` | `sponsor_base`, `sponsor_corrected`, `change`, `combined` | Rule 13 |
+| `analysis` | `deterministic`, `probabilistic`, `not_stated` | As the table or its footnote says for this row: rule 13 |
+| `category` | `extrapolation_survival`, `treatment_effect`, `treatment_effect_waning`, `utilities`, `time_horizon`, `comparator`, `drug_costs_wastage_dosing`, `treatment_duration`, `other_costs`, `population`, `model_structure`, `other` | `change` rows only: rule 15 |
+| `multiple_changes` | bool | The row applies several changes in different categories; `category` is the one listed first |
+| `cost_drug`, `qaly_drug` | number | Total cost and QALYs of the drug under review, as printed |
+| `cost_comparator`, `qaly_comparator` | number | Total cost and QALYs of the comparator, as printed |
+| `inc_cost`, `inc_qaly` | number | Only when the table prints incremental values instead of totals (2020 pCODR tables) |
+| `icer` | number ($/QALY) | As printed, negative values included (PC0350: −1,429); null if no number is printed |
+| `icer_note` | `point`, `dominant`, `dominated`, `extended_dominance`, `not_reported` | What the figure means: a negative ICER with more QALYs is `dominant` |
 
 These describe the agency's critique, so they are used to describe revisions, **never** as model inputs.
 
@@ -205,7 +242,7 @@ Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare
 
 | field | notes |
 |---|---|
-| `evidence` | Verbatim quotes of 30 words or fewer, each with its document (`rec`, `pe`, `clin`), its page and the `fields` it supports. **Every number extracted needs a quote that contains it**; a number computed from others (rule 10) quotes the figures it came from. One quote may support several fields: a sentence giving the agency's ICER and its range supports `agency_icer`, `agency_icer_status`, `agency_icer_range_low` and `agency_icer_range_high`. Coded fields (statuses, design, model type) need a quote when the choice is not obvious. For `steps`, quote the table's title and its last row. About 10 quotes per call at most |
+| `evidence` | Verbatim quotes of 30 words or fewer, each with its document (`rec`, `pe`, `clin`), its page and the `fields` it supports. **Every number extracted needs a quote that contains it**; a number computed from others (rule 10) quotes the figures it came from. One quote may support several fields: a sentence giving the agency's ICER and its range supports `agency_icer`, `agency_icer_status`, `agency_icer_range_low` and `agency_icer_range_high`. Coded fields (statuses, design, model type) need a quote when the choice is not obvious. The stepped table needs no quotes: its title and row labels are verbatim, and code finds them. About 10 quotes per call at most |
 | `notes` | Judgement calls, and populations or comparators not used (rule 6) |
 | `extractor_id` | Model and prompt version |
 
@@ -248,8 +285,54 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
 
 **Checking the figures**
 
-12. **Stepwise check.** If there is a cumulative stepwise table, its last ICER must match `agency_icer` within
-    ±2%. Flag the record if it doesn't.
+12. **Stepped-table check.** A `combined` row of the same `analysis` type as `agency_icer` (`icer_type`) should
+    match it within ±2%, and a `sponsor_base` row of the same type should match `sponsor_icer` unless the sponsor
+    revised its model (rule 5). Rows of the other type are not compared: the single-change rows are usually
+    deterministic while the base cases are usually probabilistic (PC0330's table starts at $55,198
+    deterministic; the sponsor's probabilistic base case is $60,879). Code flags the record if a comparison
+    fails; the extractor still copies the table as printed.
+
+**The stepped analysis**
+
+13. **Which table, and its rows.** Take the economic evaluation's stepped analysis, never the budget impact
+    analysis's (which also says "stepped analysis" but reports budgets, not ICERs), and never a table of
+    scenario or sensitivity analyses run on the agency's base case. If there is no such table,
+    `has_stepped_table = false` and `rows` is empty.
+    - Row types: `sponsor_base` (the sponsor's base case), `sponsor_corrected` (after the agency's error
+      corrections, when the table shows it), `change` (one numbered reanalysis) and `combined` (all changes
+      together). Copy each row the table has; a table may lack some types, and may give the combined row twice,
+      deterministic and probabilistic: copy both.
+    - `analysis`: what the table says for the row, often in a footnote ("Deterministic analysis, unless
+      otherwise stated") or in the label ("(probabilistic)"). `not_stated` when it says nothing.
+    - `table_format`: `changes_then_combined` when each change is applied on its own to the sponsor's (corrected)
+      base case and a final row combines them (the usual form, "Reanalysis 1 + 2 + 3"); `cumulative` when each
+      row adds its change to the row before; `other` for anything else.
+    - Older pCODR reports (2020–21) instead list one-way analyses with a "best case" or "base case" row that
+      combines some of them (e.g. PC0195: "Best case estimate of parameters (No. 2, 3, 10)"). Record only the
+      changes that make up the agency's base case, plus the starting and combined rows, and set
+      `table_format = other`.
+14. **Which drug and comparator.** Many tables list several treatments in every row. Take the drug under review
+    and the comparator the agency's base-case ICER refers to (rule 1), and copy those two lines of each row. If
+    the drug appears in several doses or regimens, take the one the Recommendation is about and say so in
+    `notes`. If the table has an ICER only against another comparator (a sequential analysis), still copy the
+    costs and QALYs of the chosen pair, set `icer_note` from what is printed for the drug, and explain in `notes`.
+15. **Categories.** Code what the change does to the model. The agency's "Revisions to the Submitted Economic
+    Evaluation" table, which gives the sponsor's and the agency's value for each change, is the best guide.
+    - `extrapolation_survival`: the curves for OS, PFS or other time-to-event outcomes beyond the trial: the
+      parametric distribution, use of Kaplan-Meier data, cure assumptions
+    - `treatment_effect`: the size of the drug's effect compared with the comparator: hazard ratios, response
+      rates, which indirect comparison is used
+    - `treatment_effect_waning`: whether and when the drug's benefit fades over time
+    - `utilities`: health-state utility values, utility decrements, adverse-event disutilities
+    - `time_horizon`: the length of the model
+    - `comparator`: which treatments are compared, or the mix of treatments in a comparator basket
+    - `drug_costs_wastage_dosing`: price, dose, dose intensity, vial sharing and wastage of the drugs compared
+    - `treatment_duration`: how long patients stay on treatment, and stopping rules
+    - `other_costs`: health-state, monitoring, administration, adverse-event, subsequent-treatment and
+      end-of-life costs
+    - `population`: who is modelled: the eligible population, subgroup, age or weight
+    - `model_structure`: health states, transitions, cycle length, half-cycle correction
+    - `other`: none of the above; say what in `notes`
 
 ## 4. Computed in code, not by the LLM
 
@@ -260,7 +343,7 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
 | `crossed_threshold` | sponsor ICER ≤ T and agency ICER > T, with T = `wtp_threshold`. For `sponsor_dominant` reviews: true if the agency ICER > T |
 | Cost vs QALY split | log(ratio) = log(ΔC agency / ΔC sponsor) − log(ΔQ agency / ΔQ sponsor) |
 | Price-cut split | sponsor-implied cut = max(0, 1 − T / sponsor ICER); agency-implied cut = max(0, 1 − T / agency ICER); the revision's part is the difference. It treats the drug price as the whole incremental cost, so it is an approximation, reported next to `price_reduction_pct` |
-| Contribution of each stepwise category | From `steps` |
+| Contribution of each stepped-analysis change | From `rows`. Method not yet chosen ([analysis-plan.md](analysis-plan.md) §4) |
 | `stream` | `onc` / `non_onc` from the project prefix |
 | `year` | From the listing |
 | `therapeutic_group` | 4–6 groups, mapped from the listing's free text |
@@ -282,7 +365,7 @@ Below that, the disagreements show which rule is still unclear; fix the rule and
    - every evidence quote is found word for word in the attached pages, on the page and in the document it cites
      (`locate.py`; built, and shown in the viewer)
    - ΔC ÷ ΔQ reproduces each ICER within ±2%
-   - the stepwise table ends at `agency_icer` (rule 12)
+   - the stepped table's combined row matches `agency_icer` (rule 12)
    - the Recommendation and the economic report agree
    - the price cut is consistent with the agency ICER and threshold
    - the record passes schema validation

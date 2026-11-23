@@ -187,6 +187,36 @@ fields and highlights the quotes.
 **Considered:** stamping our own page number on every selected page so models cite it. Not needed while the
 locate step corrects pages; revisit if the precision check shows many wrong pages.
 
+### D19. The stepped analysis is copied as printed, with costs and QALYs
+**Decided:** the stepwise group copies the agency's stepped-analysis table row by row for the drug under review
+and the base-case comparator: each row's verbatim label, its type (sponsor base, sponsor corrected, change,
+combined), a category for each change, total costs and QALYs for both treatments, and the ICER as printed
+([extraction-spec.md](extraction-spec.md) §2.3, rules 12–15). How much each change contributes is computed
+afterwards; the method is left open ([analysis-plan.md](analysis-plan.md) §4).
+**Replaced:** a list of steps with a 15-word description, a category and the ICER after each step, on the
+assumption that the tables are cumulative.
+**Why:**
+- *The tables are not cumulative.* Read across 2021–2025 reviews, CDA-AMC applies each change on its own to the
+  sponsor's base case and then all together (PC0330, PC0350, SR0685), so the steps do not add up to the revision.
+  The old fields had no rule for this, and on PC0195's 2020 table Haiku and Sonnet listed all 11 one-way analyses
+  while Carbon listed only the 3 in the agency's base case.
+- *ICERs alone lose rows.* An ICER can be negative or dominated (PC0350's sponsor base case is −$1,429), where a
+  log-ratio share is undefined; costs and QALYs keep every row usable and every method possible, for 4 more
+  copied numbers per row. Re-extracting them later would mean a second full run.
+- *Verbatim labels are checkable.* Code finds every row label on the table's pages, so each row is verified,
+  where the old descriptions were the model's own words.
+- *Categories were names without definitions.* Rule 15 defines each, and `treatment_effect` (hazard ratios,
+  which indirect comparison) is added, since such changes had no category.
+**Tested** with Sonnet 5.5 on four reviews chosen for their table shapes (2026-11-22): PC0195 (2020 one-way
+table, incremental values only), PC0330 (the usual form), SR0685 (four treatments, two doses, a corrected base
+case) and PC0350 (negative ICERs; deterministic and probabilistic combined rows). Every cost, QALY and ICER
+matched the PDFs, and every row label was found on its page. Two changes followed: each row records whether it
+is deterministic or probabilistic, so rule 12 compares like with like, and a negative ICER is kept as printed.
+**Still open:** the contribution method (share of the log ICER ratio, or effect on net monetary benefit at the
+threshold), to be fixed in the analysis plan before the data are examined. Category coding of unusual changes
+(concomitant therapy, the comparator's response) is the likeliest source of disagreement; check it in the
+precision run.
+
 ## Ideas on hold
 
 - **Adding 2026 reviews.** Open.

@@ -48,6 +48,17 @@ def _fields(item: dict) -> dict:
     return item | {"fields": [item.pop("field")]}
 
 
+def _row_labels(values: dict) -> list[dict]:
+    """The stepped table's title and row labels are verbatim, so each is located like a quote."""
+    if not values.get("table_document") or not values.get("table_page"):
+        return []
+    where = {"document": values["table_document"], "page": values["table_page"], "table": True}
+    items = [{"fields": ["table_title"], "quote": values["table_title"]} | where] if values.get("table_title") else []
+    return items + [
+        {"fields": ["rows"], "quote": row["label"], "row": row["order"]} | where for row in values.get("rows") or []
+    ]
+
+
 def reviews(extractions: Path = config.EXTRACTIONS, pages: Path = config.PAGES) -> list[dict]:
     """Reviews that have selected pages and at least one extraction record."""
     found: dict[str, list[str]] = {}
@@ -73,6 +84,7 @@ def review(project: str, extractions: Path = config.EXTRACTIONS, pages: Path = c
                 if note := output.pop("notes", "").strip():
                     notes.append({"group": group, "text": note})
                 values |= output
+        evidence += _row_labels(values)
         out.append(
             {
                 "id": path.parent.name,
