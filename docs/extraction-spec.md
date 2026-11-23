@@ -85,8 +85,9 @@ are merged into one record. The calls are made one after another, through OpenRo
 - **The schema goes in the final message, not in `response_format`.** Providers treat an output schema as part
   of the prompt prefix, so a different schema per call would invalidate the cache. The reply is validated against
   the schema in code; an invalid reply fails that call, and a re-run repeats only the calls that failed.
-- **Each group stays within Anthropic's schema limit** of 16 fields that may be null or of several types (the full
-  record has 29).
+- **Why four groups.** Each call stays focused on related fields. The split began with Anthropic's limit of 16
+  fields that may be null when a schema is enforced; with the schema in the prompt that limit no longer applies,
+  and the stepped-analysis group now exceeds it (D17, D19).
 
 Measured on PC0195 with Claude Haiku 5.5 (about 175k input tokens per call): $0.154 for the review with the cache,
 against $0.46 with a schema per call and no cache hits ([decisions.md](decisions.md), D17).
@@ -104,6 +105,10 @@ Test runs on PC0195 (one review, so a first look only):
 - Gemini reads a PDF page as about 1,300 tokens (77k for PC0195's 58 pages), not the 258–560 its older
   documentation gives, and its automatic cache hit on only some calls. At high effort Carbon spent up to 31,600
   tokens thinking per call and once ran out of room before answering; medium effort avoided that.
+
+The new stepped-analysis schema was then run with Sonnet 5.5 on four reviews chosen for their table shapes
+(PC0195, PC0330, SR0685, PC0350): $0.53–0.63 and under a minute per review, calls 2–4 reading the PDFs from the
+cache, and every cost, QALY and ICER in the four tables matched the PDFs (D19).
 
 Replies are streamed, so a stalled connection is caught rather than waited out, and each review's record is saved
 after every call. A reply that fails validation is kept with the reason, so it can be read.

@@ -3,7 +3,7 @@
 Fields are extracted in four calls, one per group of related fields (`GROUPS`): the ICERs with costs and QALYs,
 the agency's stepped analysis, the submission features, and the price reduction. Each call returns its group's
 fields plus `evidence` and `notes`; the four are merged into one `Extraction` per review. Grouping keeps each call
-focused, and keeps each schema within Anthropic's limit of 16 fields that may be null or of several types.
+focused. The schema is sent in the prompt and checked here, not enforced by the provider (decisions D17).
 
 Each field's description is sent to the model as part of the JSON schema, so it states the field briefly and
 points to the spec's rule numbers; the rules themselves are in the prompt. Values computed in code (the ratio,

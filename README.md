@@ -31,8 +31,8 @@ cases), then the [analysis plan](docs/analysis-plan.md) (hypotheses and models, 
 |---|---|
 | Cohort, document download | Done (this repo) |
 | Page selection | Done: one PDF per document of the pages extraction reads, so tables keep their layout ([docs/extraction-spec.md](docs/extraction-spec.md) §1.1) |
-| LLM extraction | Runner built: four grouped calls per review through OpenRouter, PDFs cached, replies validated; tested on one review ([docs/extraction-spec.md](docs/extraction-spec.md) §1.2) |
-| Second extractor, comparison, adjudication, automatic checks | Not started; next is the 20-review precision check ([docs/extraction-spec.md](docs/extraction-spec.md) §5) |
+| LLM extraction | Runner built: four grouped calls per review through OpenRouter, PDFs cached, replies validated; tested with Sonnet 5.5 on four reviews, every stepped-table number matching the PDFs ([docs/extraction-spec.md](docs/extraction-spec.md) §1.2) |
+| Second extractor, comparison, adjudication, automatic checks | Quote check and local viewer built; Gemini 4 Carbon tried on one review; extractor B, comparison and adjudication not started. Next is the 20-review precision check ([docs/extraction-spec.md](docs/extraction-spec.md) §5) |
 | Validation, statistical analysis, write-up | Not started; planned in [docs/analysis-plan.md](docs/analysis-plan.md) |
 
 A 60-review pilot confirmed the approach is feasible: about 65% of reviews have a usable ICER ratio, and the
