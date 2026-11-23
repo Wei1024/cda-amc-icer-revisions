@@ -59,13 +59,20 @@ uv run icer download    # Recommendation, economic and (2020-21) clinical report
 uv run icer pages       # selected pages -> data/pages/<project>/{rec,pe,clin}.pdf + a page map
 uv run icer all         # cohort, download and pages in order
 uv run icer excerpts    # PDF -> text -> one excerpt per review -> data/excerpts/ (temporary, not in `all`)
-uv run icer extract --extractor haiku-test --projects PC0195-000   # LLM extraction via OpenRouter (costs money)
+uv run icer extract --extractor sonnet-test --projects PC0195-000   # LLM extraction via OpenRouter (costs money)
+uv run icer view PC0195-000   # local viewer: the PDFs beside each extractor's fields, quotes highlighted
 ```
 
-`extract` runs one extractor, named in `EXTRACTORS` in `src/icer_revisions/extract.py` (`a` is Claude Opus 5.5,
-`haiku-test` is Claude Haiku 5.5); it takes `--projects` and `--limit`. It needs `OPENROUTER_API_KEY` in `.env`,
-and is not part of `all` because it costs money (about $0.15 per review with Haiku 5.5). Re-runs skip finished
+`extract` runs one extractor, named in `EXTRACTORS` in `src/icer_revisions/extract.py`: `a` is Claude Opus 5.5, and
+`sonnet-test`, `haiku-test` and `carbon-test` (Gemini 4 Carbon) are for trying things out. It takes `--projects` and
+`--limit`, needs `OPENROUTER_API_KEY` in `.env`, and is not part of `all` because it costs money (about $0.50 per
+review with Sonnet 5.5). It prints each call as it finishes and saves after every call; re-runs skip finished
 reviews and repeat only failed calls.
+
+`view` starts a small web server on this machine only and opens the browser. The selected pages are on the left;
+on the right are the fields of every extractor that has run on the review, side by side, with disagreements
+shaded. Clicking a quote opens its page with the words highlighted, or says where the quote really is when the
+cited page is wrong. It reads `data/` and sends nothing anywhere.
 
 `excerpts` is the text-based step from the pilot. It flattens tables into plain text, so `pages` replaces it: the
 LLM reads the selected PDF pages as they are. `excerpts` will be removed once extraction runs on `pages`.
@@ -94,6 +101,8 @@ src/icer_revisions/
   excerpts.py          PDF to text, cue-based excerpting (temporary; replaced by pages.py)
   schema.py            the extraction output (pydantic) in four field groups, from docs/extraction-spec.md §2
   extract.py           runs one LLM extractor via OpenRouter: four grouped calls per review, PDFs cached
+  locate.py            finds each evidence quote in the PDFs: its page and the boxes around it
+  view.py, viewer/     the local viewer (`icer view`): a small server, and one HTML page using PDF.js
   cli.py               the `icer` command
 tests/
 .env.example           the API key variable; copy to .env

@@ -8,7 +8,7 @@ The output schema is `src/icer_revisions/schema.py` and the runner is `src/icer_
 through OpenRouter: native PDF input, four grouped calls per review with the PDFs cached, and replies validated
 against the schema (§1.2).
 
-**Still open:** extractor B (a different model family; Gemini first) and the adjudicator; the comparison and
+**Still open:** extractor B (a different model family; Gemini 4 Carbon tested on one review, §1.2) and the adjudicator; the comparison and
 automatic-check code (§5); and whether to use OpenRouter's half-price batch models for the full run.
 
 **Contents**
@@ -90,6 +90,23 @@ are merged into one record. The calls are made one after another, through OpenRo
 
 Measured on PC0195 with Claude Haiku 5.5 (about 175k input tokens per call): $0.154 for the review with the cache,
 against $0.46 with a schema per call and no cache hits ([decisions.md](decisions.md), D17).
+
+Test runs on PC0195 (one review, so a first look only):
+
+| model, effort | time | cost | cache | quotes on the cited page |
+|---|---|---|---|---|
+| Claude Haiku 5.5, medium | about 1 min | $0.15 | calls 2–4 read the PDFs | 5 of 15 (old quote rules) |
+| Claude Sonnet 5.5, medium | 47 s | $0.53 | calls 2–4 read the PDFs | 19 of 20 |
+| Gemini 4 Carbon, high (stepwise at medium) | about 14 min | $0.80 | 2 of 4 calls hit | 13 of 14 (old quote rules) |
+
+- Haiku cited the page numbers printed on the reports rather than positions in the attached PDFs, and its
+  answers were the weakest; Sonnet is the cheaper model used for testing.
+- Gemini reads a PDF page as about 1,300 tokens (77k for PC0195's 58 pages), not the 258–560 its older
+  documentation gives, and its automatic cache hit on only some calls. At high effort Carbon spent up to 31,600
+  tokens thinking per call and once ran out of room before answering; medium effort avoided that.
+
+Replies are streamed, so a stalled connection is caught rather than waited out, and each review's record is saved
+after every call. A reply that fails validation is kept with the reason, so it can be read.
 
 ## 2. Output: one record per review
 
@@ -188,7 +205,7 @@ Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare
 
 | field | notes |
 |---|---|
-| `evidence` | Up to 4 verbatim quotes per extraction call, of 30 words or fewer, for the fields that are not obvious. Each gives its document (`rec`, `pe`, `clin`) and page |
+| `evidence` | Verbatim quotes of 30 words or fewer, each with its document (`rec`, `pe`, `clin`), its page and the `fields` it supports. **Every number extracted needs a quote that contains it**; a number computed from others (rule 10) quotes the figures it came from. One quote may support several fields: a sentence giving the agency's ICER and its range supports `agency_icer`, `agency_icer_status`, `agency_icer_range_low` and `agency_icer_range_high`. Coded fields (statuses, design, model type) need a quote when the choice is not obvious. For `steps`, quote the table's title and its last row. About 10 quotes per call at most |
 | `notes` | Judgement calls, and populations or comparators not used (rule 6) |
 | `extractor_id` | Model and prompt version |
 
@@ -262,6 +279,8 @@ Below that, the disagreements show which rule is still unclear; fix the rule and
    corrected value, or `ambiguous`.
 3. Automatic checks; a record that fails one is flagged, not deleted:
    - every extracted number appears verbatim in the source text
+   - every evidence quote is found word for word in the attached pages, on the page and in the document it cites
+     (`locate.py`; built, and shown in the viewer)
    - ΔC ÷ ΔQ reproduces each ICER within ±2%
    - the stepwise table ends at `agency_icer` (rule 12)
    - the Recommendation and the economic report agree

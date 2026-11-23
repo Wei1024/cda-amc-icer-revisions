@@ -167,8 +167,25 @@ goes in the final message rather than in `response_format` ([extraction-spec.md]
   call is repeated on the next run.
 **Considered:** one call per review with numbers returned as a list (to fit the limit), the cheapest option at
 about two thirds of the grouped cost. Grouped calls were preferred for focus, at a cost the cache keeps moderate.
-**Still open:** extractor B. Gemini is a different model family and reads PDFs at roughly 258–560 tokens per page,
-against several thousand for Claude, so it is the first candidate to test.
+**Still open:** extractor B. Gemini 4 Carbon was tested on one review (2026-11-22): good answers and quotes, but
+about 1,300 tokens per PDF page rather than the 258–560 expected, an unreliable cache, and long thinking at high
+effort, so $0.80 and about 14 minutes for PC0195 ([extraction-spec.md](extraction-spec.md) §1.2).
+
+### D18. A quote for every number, checked against the PDFs
+**Decided:** every number extracted has a verbatim quote that contains it, and one quote may support several
+fields. Code finds each quote in the attached PDFs (`locate.py`): on the cited page, elsewhere in the document,
+in another document, partly, or not at all. A local viewer (`icer view`) shows the PDFs beside each extractor's
+fields and highlights the quotes.
+**Replaced:** up to 4 quotes per call, each for one field, for the fields that were not obvious.
+**Why:**
+- With 4 quotes for up to 19 fields, most values had no evidence, and a quote that supports four fields (an
+  ICER, its status and its range) could name only one.
+- Quotes that are found make the spec §5 check "every number appears in the source" automatic, and give the
+  adjudicator the evidence for both answers.
+- Checking where quotes really are showed that Haiku 5.5 cited the reports' printed page numbers (10 of 15 quotes
+  on PC0195 were on another page or in another document), so a quote's page is checked, never trusted.
+**Considered:** stamping our own page number on every selected page so models cite it. Not needed while the
+locate step corrects pages; revisit if the precision check shows many wrong pages.
 
 ## Ideas on hold
 

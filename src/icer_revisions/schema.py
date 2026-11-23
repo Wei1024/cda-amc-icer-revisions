@@ -49,12 +49,14 @@ class _Strict(BaseModel):
 
 
 class Evidence(_Strict):
-    field: str = Field(description="Name of the field this quote supports")
+    fields: list[str] = Field(description="Names of the fields this quote supports; one quote may support several")
     document: Literal["rec", "pe", "clin"] = Field(
         description="Which attached document: rec (Recommendation), pe (economic report), clin (clinical report)"
     )
     quote: str = Field(description="Verbatim text from that document, 30 words or fewer")
-    page: int = Field(description="Page number within that attached document (1 = its first page)")
+    page: int = Field(
+        description="Page within that attached document (1 = its first page), not the number printed on the page"
+    )
 
 
 class Step(_Strict):
@@ -141,7 +143,9 @@ class PriceFields(_Strict):
 class _Audit(_Strict):
     """Spec §2.6: returned by every call."""
 
-    evidence: list[Evidence] = Field(description="Up to 4 quotes, for the fields of this call that are not obvious")
+    evidence: list[Evidence] = Field(
+        description="A quote for every number extracted, and for coded fields that are not obvious; about 10 at most"
+    )
     notes: str = Field(description="Judgement calls, with the rule number; populations or comparators not used")
 
 

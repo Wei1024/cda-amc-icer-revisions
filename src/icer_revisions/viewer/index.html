@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Extraction viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+  <script type="module" src="viewer.js"></script>
+</head>
+<body>
+  <header>
+    <strong>Extraction viewer</strong>
+    <select id="review" aria-label="Review"></select>
+    <span id="extractors"></span>
+  </header>
+  <main>
+    <section id="pdf-pane">
+      <div class="toolbar">
+        <span id="doc-tabs"></span>
+        <button id="prev" title="Previous page (←)">‹</button>
+        <span id="page-label"></span>
+        <button id="next" title="Next page (→)">›</button>
+      </div>
+      <div id="quote" hidden></div>
+      <div id="pdf-wrap">
+        <div id="page">
+          <canvas id="canvas"></canvas>
+          <div id="boxes"></div>
+        </div>
+      </div>
+    </section>
+    <section id="panel"><p class="muted">Loading…</p></section>
+  </main>
+</body>
+</html>

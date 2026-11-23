@@ -19,7 +19,8 @@ extractors comparable:
   set of outputs instead of mixing old and new.
 
 One JSON file per review and extractor, under data/extractions/<extractor id>/, holding each call's output and
-the merged record. Re-runs skip reviews that are complete and repeat only the calls that failed. Comparing two
+the merged record, saved after every call. Replies are streamed, so a stalled connection is caught rather than
+waited out. Re-runs skip reviews that are complete and repeat only the calls that failed or never ran. Comparing two
 extractors and adjudicating their disagreements are separate steps.
 """
 
@@ -30,6 +31,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -52,8 +54,9 @@ clinical report). Fill every field of the output schema from these pages only.
 - Follow the field definitions and the numbered rules below. When a rule decides a value, say so in `notes`
   with its number (for example "rule 5: used the revised sponsor base case").
 - Submission features describe what the sponsor submitted. Never take them from the agency's critique.
-- `evidence` quotes are verbatim. Give the document they come from and the page within that attached document
-  (its first page is 1).
+- Every number you extract needs an `evidence` quote that contains it, and one quote may support several
+  fields. Quotes are verbatim. Give the document they come from and the page within that attached document
+  (its first page is 1), not the page number printed on the page.
 
 The field definitions and rules follow."""
 
@@ -75,7 +78,8 @@ def _group_prompt(group: str) -> str:
     return (
         f"Fill the `{group}` fields (spec {SECTIONS[group]}): {fields}. "
         "Give evidence and notes for these fields only.\n"
-        f"Reply with only a JSON object that matches this JSON schema, with no other text:\n{schema}"
+        "Your reply is one JSON object holding these values, with no other text. This JSON schema describes the "
+        f"object; do not repeat the schema itself:\n{schema}"
     )
 
 
@@ -103,6 +107,8 @@ class Extractor:
 EXTRACTORS = {
     "a": Extractor("a", "anthropic/claude-opus-5.5", provider="anthropic"),
     "haiku-test": Extractor("haiku-test", "anthropic/claude-haiku-5.5", effort="medium", provider="anthropic"),
+    "sonnet-test": Extractor("sonnet-test", "anthropic/claude-sonnet-5.5", effort="medium", provider="anthropic"),
+    "carbon-test": Extractor("carbon-test", "google/gemini-4-carbon", effort="medium", provider="google-vertex/global"),
 }
 
 
@@ -155,12 +161,40 @@ def request_body(extractor: Extractor, project: str, group: str, documents: list
 Post = Callable[[dict], tuple[int, dict, dict]]  # body -> (HTTP status, response JSON, headers)
 
 
-def http_post(key: str, timeout: float = 900) -> Post:
+def assemble(lines) -> dict:
+    """Rebuild one chat completion from a streamed reply's server-sent events (`data: {...}` lines).
+
+    Streaming keeps bytes flowing while the model thinks (OpenRouter sends keep-alive comments), so a read timeout
+    catches a connection that has really stalled instead of waiting out a long call. An error mid-stream comes back
+    as `{"error": ...}`, like a failed non-streamed call.
+    """
+    out = {"choices": [{"message": {"content": ""}, "finish_reason": None}]}
+    for line in lines:
+        line = line.decode() if isinstance(line, bytes) else line
+        if not line.startswith("data: ") or line == "data: [DONE]":
+            continue
+        chunk = json.loads(line[6:])
+        if "error" in chunk:
+            return {"error": chunk["error"]}
+        for key in ("id", "model", "provider", "usage"):
+            if chunk.get(key):
+                out[key] = chunk[key]
+        for choice in chunk.get("choices") or []:
+            out["choices"][0]["message"]["content"] += (choice.get("delta") or {}).get("content") or ""
+            if choice.get("finish_reason"):
+                out["choices"][0]["finish_reason"] = choice["finish_reason"]
+    return out
+
+
+def http_post(key: str, stall: float = 300) -> Post:
+    """POST a streamed request; `stall` is the most seconds to wait with no bytes at all from the server."""
     session = requests.Session()
     session.headers.update({"Authorization": f"Bearer {key}", "X-OpenRouter-Title": "icer-revisions"})
 
     def post(body: dict) -> tuple[int, dict, dict]:
-        resp = session.post(URL, json=body, timeout=timeout)
+        resp = session.post(URL, json=body | {"stream": True}, timeout=(30, stall), stream=True)
+        if "text/event-stream" in resp.headers.get("Content-Type", ""):
+            return resp.status_code, assemble(resp.iter_lines()), dict(resp.headers)
         try:
             data = resp.json()
         except ValueError:
@@ -198,23 +232,34 @@ def _usage(data: dict) -> dict:
     }
 
 
-def _json_text(content: str | None) -> str:
-    """The JSON object in a reply, without a Markdown code fence around it."""
-    text = (content or "").strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
-    return text.strip()
+def _json_objects(content: str | None) -> list[str]:
+    """Each top-level JSON object in a reply, in order. Usually one; a reply that echoes the schema before its
+    answer, or wraps it in a Markdown code fence, still yields the answer."""
+    text, decoder, out, i = content or "", json.JSONDecoder(), [], 0
+    while (i := text.find("{", i)) != -1:
+        try:
+            _, end = decoder.raw_decode(text, i)
+        except ValueError:
+            i += 1
+            continue
+        out.append(text[i:end])
+        i = end
+    return out or [text.strip()]
 
 
 def call_group(post: Post, extractor: Extractor, project: str, group: str, documents: list[dict]) -> dict:
     """One call for one field group: {output, error, and the call's metadata}."""
+    start = time.monotonic()
     status, data = _send(post, request_body(extractor, project, group, documents))
+    seconds = round(time.monotonic() - start, 1)
     if "error" in data and not data.get("choices"):
         err = data["error"]
         kind = (err.get("metadata") or {}).get("error_type") or f"http_{err.get('code', status)}"
-        return {"error": f"{kind}: {err.get('message', '')[:300]}", "output": None}
+        return {"error": f"{kind}: {err.get('message', '')[:300]}", "output": None, "seconds": seconds}
     choice = data["choices"][0]
     call = {
+        "seconds": seconds,
+        "effort": extractor.effort,
         "served_by": data.get("model"),
         "provider": data.get("provider"),
         "generation_id": data.get("id"),
@@ -223,18 +268,31 @@ def call_group(post: Post, extractor: Extractor, project: str, group: str, docum
     }
     if choice.get("finish_reason") != "stop":  # "length": output cut off; "content_filter": refused
         return call | {"error": choice.get("finish_reason") or "no_finish_reason", "output": None}
-    try:
-        parsed = GROUPS[group].model_validate_json(_json_text(choice["message"]["content"]))
-    except ValidationError as e:
-        return call | {"error": f"invalid_output: {e.error_count()} errors", "output": None}
+    content = choice["message"]["content"]
+    first_error = None
+    for text in _json_objects(content):
+        try:
+            parsed = GROUPS[group].model_validate_json(text)
+            break
+        except ValidationError as e:
+            first_error = first_error or e
+    else:
+        problems = "; ".join(f"{'.'.join(map(str, d['loc']))}: {d['msg']}" for d in first_error.errors()[:5])
+        return call | {"error": f"invalid_output: {problems}"[:500], "output": None, "raw": content}
     return call | {"error": None, "output": parsed.model_dump(mode="json")}
 
 
 def extract_one(
-    post: Post, extractor: Extractor, project: str, docs: dict[str, Path], previous: dict | None = None
+    post: Post,
+    extractor: Extractor,
+    project: str,
+    docs: dict[str, Path],
+    previous: dict | None = None,
+    save: Callable[[dict], None] = lambda record: None,
 ) -> dict:
     """All four calls for one review, reusing groups that succeeded in `previous`. Always returns a record;
-    `error` is set unless every group succeeded."""
+    `error` is set unless every group succeeded. `save` gets the record after every call, so a run that is
+    stopped keeps the calls already paid for."""
     record = {"project": project, "extractor_id": extractor.id, "model": extractor.model, "documents": list(docs)}
     if sum(p.stat().st_size for p in docs.values()) > MAX_PDF_BYTES:
         return record | {"error": "pdf_too_large", "calls": {}, "extraction": None}
@@ -243,7 +301,14 @@ def extract_one(
     for group in GROUPS:
         if group not in calls:
             documents = documents or document_parts(docs)
-            calls[group] = call_group(post, extractor, project, group, documents)
+            calls[group] = call = call_group(post, extractor, project, group, documents)
+            usage = call.get("usage") or {}
+            print(
+                f"    {group}: {call['error'] or 'ok'} in {call.get('seconds', 0):.0f}s, "
+                f"${usage.get('cost_usd') or 0:.4f}, {usage.get('cached_tokens') or 0} cached tokens",
+                flush=True,
+            )
+            save(record | {"calls": dict(calls), "error": "incomplete", "extraction": None})
     errors = [f"{g}: {c['error']}" for g, c in calls.items() if c["error"]]
     costs = [(c.get("usage") or {}).get("cost_usd") or 0 for c in calls.values()]
     record |= {"calls": {g: calls[g] for g in GROUPS}, "cost_usd": round(sum(costs), 6)}
@@ -251,6 +316,11 @@ def extract_one(
         return record | {"error": "; ".join(errors), "extraction": None}
     parts = {g: GROUPS[g].model_validate(calls[g]["output"]) for g in GROUPS}
     return record | {"error": None, "extraction": merge(parts).model_dump(mode="json")}
+
+
+def _write(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2))
 
 
 def out_path(extractor: Extractor, project: str, out_dir: Path = config.EXTRACTIONS) -> Path:
@@ -280,12 +350,12 @@ def run(
             status = "no_pages"
         else:
             previous = json.loads(dest.read_text()) if dest.exists() else None
-            record = extract_one(post, extractor, project, docs, previous)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(json.dumps(record, indent=2))
+            print(f"  {project}:", flush=True)
+            record = extract_one(post, extractor, project, docs, previous, save=partial(_write, dest))
+            _write(dest, record)
             status = record["error"] or "ok"
-            print(f"  {project}: {status} (${record.get('cost_usd') or 0:.4f})")
+            print(f"  {project}: {status} (${record.get('cost_usd') or 0:.4f})", flush=True)
         rows.append({"project": project, "status": status})
     summary = pd.DataFrame(rows)
-    print(f"extract {extractor.id}: {summary.status.value_counts().to_dict()}")
+    print(f"extract {extractor.id}: {summary.status.value_counts().to_dict()}", flush=True)
     return summary

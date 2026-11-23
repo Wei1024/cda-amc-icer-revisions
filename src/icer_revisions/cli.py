@@ -1,4 +1,4 @@
-"""Command line: `icer cohort`, `icer download`, `icer pages`, `icer excerpts`, `icer all`, or `icer extract`."""
+"""Command line: `icer cohort`, `download`, `pages`, `excerpts`, `all`, `extract` or `view`."""
 
 import argparse
 
@@ -21,7 +21,16 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--extractor", required=True, help="extractor name, e.g. a")
     p.add_argument("--projects", nargs="+", metavar="PROJECT", help="limit to these project numbers")
     p.add_argument("--limit", type=int, help="stop after this many reviews")
+    p = sub.add_parser("view", help="open the local viewer: PDFs beside each extractor's fields and quotes")
+    p.add_argument("project", nargs="?", help="review to open first, e.g. PC0195-000")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     args = parser.parse_args(argv)
+
+    if args.step == "view":
+        from . import view
+
+        return view.serve(args.project, args.port, open_browser=not args.no_browser)
 
     if args.step in ("cohort", "all"):
         cohort = listing.run()

@@ -10,7 +10,7 @@
 | `text/` | no | Plain text of each PDF, cached on first conversion |
 | `pages/<project>/` | no | `rec.pdf`, `pe.pdf` and, where there is one, `clin.pdf`: the selected pages of each document, the input to extraction (`icer pages`); about 2 GB |
 | `interim/page_selection.csv` | no | One row per kept page: source page, output page, and the rule that kept it (`icer pages`) |
-| `extractions/<extractor id>/` | no | One JSON record per review: each of the four calls (output, model and provider, tokens, cost, error) and the merged extraction (`icer extract`). The id includes a hash of the prompt, so a prompt change writes to a new folder |
+| `extractions/<extractor id>/` | no | One JSON record per review: each of the four calls (output, model and provider, effort, time, tokens, cost, error, and the raw reply when it failed validation) and the merged extraction (`icer extract`). Saved after every call. The id includes a hash of the prompt, so a prompt change writes to a new folder |
 | `excerpts/` | no | One text excerpt per review (`icer excerpts`). Temporary: page selection will replace it as the input to LLM extraction |
 
 The export's parsing quirks (variable URL columns, `internal:` links, spaces and an unquoted comma in file

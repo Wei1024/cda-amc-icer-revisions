@@ -62,7 +62,14 @@ RECORD = {
     "price_reduction_band": None,
     "price_reduction_status": "pct",
     "wtp_threshold": 50000.0,
-    "evidence": [{"field": "agency_icer", "document": "pe", "quote": "ICER of $171,723 per QALY", "page": 3}],
+    "evidence": [
+        {
+            "fields": ["agency_icer", "agency_icer_status"],
+            "document": "pe",
+            "quote": "ICER of $171,723 per QALY",
+            "page": 3,
+        }
+    ],
     "notes": "rule 4: point estimate used; range recorded",
 }
 USAGE = {
@@ -183,9 +190,12 @@ def test_run_makes_one_call_per_group_with_a_shared_cached_prefix(tmp_path, page
     assert again.status.tolist() == ["cached", "no_pages"] and len(post.bodies) == 4
 
 
-def test_a_reply_in_a_code_fence_is_accepted(tmp_path, pages):
-    fenced = "```json\n" + ok("price")[1]["choices"][0]["message"]["content"] + "\n```"
-    post = FakePost(price=[ok("price", content=fenced)])
+def test_a_reply_in_a_code_fence_or_after_an_echoed_schema_is_accepted(tmp_path, pages):
+    answer = ok("price")[1]["choices"][0]["message"]["content"]
+    fenced = "```json\n" + answer + "\n```"
+    features = ok("features")[1]["choices"][0]["message"]["content"]
+    echoed = json.dumps(GROUPS["features"].model_json_schema()) + "\n\n" + features
+    post = FakePost(price=[ok("price", content=fenced)], features=[ok("features", content=echoed)])
     ex, cohort = extract.EXTRACTORS["a"], pd.DataFrame({"project": ["PC0195-000"]})
     assert extract.run(cohort, ex, pages_dir=pages, out_dir=tmp_path / "out", post=post).status.tolist() == ["ok"]
 
@@ -211,6 +221,9 @@ def test_a_failed_group_is_recorded_and_only_it_is_retried(tmp_path, pages, resp
     assert extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post).status.tolist()[0].startswith(error)
     record = json.loads(extract.out_path(ex, "PC0195-000", out).read_text())
     assert record["extraction"] is None and record["calls"]["icers"]["error"] is None
+    if error.endswith("invalid_output"):  # the rejected reply is kept, with what was wrong
+        assert record["calls"]["features"]["raw"] == '{"pivotal_design": "rct_h2h"}'
+        assert "comparison_method: Field required" in record["calls"]["features"]["error"]
 
     retry = FakePost()
     extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=retry)
@@ -232,3 +245,30 @@ def test_api_key_comes_from_env_or_dotenv(tmp_path, monkeypatch):
     monkeypatch.setattr(extract.config, "ROOT", tmp_path)
     (tmp_path / ".env").write_text("# comment\nOPENROUTER_API_KEY='from-file'\n")
     assert extract.api_key() == "from-file"
+
+
+def test_a_streamed_reply_is_rebuilt_into_one_completion():
+    chunk = lambda **d: "data: " + json.dumps(d)  # noqa: E731
+    lines = [
+        ": OPENROUTER PROCESSING",
+        chunk(id="gen-1", model="google/gemini-4-carbon", provider="Google", choices=[{"delta": {"reasoning": "hm"}}]),
+        chunk(choices=[{"delta": {"content": '{"a": '}}]),
+        "",
+        chunk(choices=[{"delta": {"content": "1}"}, "finish_reason": "stop"}]),
+        chunk(choices=[], usage=USAGE),
+        "data: [DONE]",
+    ]
+    data = extract.assemble(line.encode() for line in lines)
+    assert data["choices"] == [{"message": {"content": '{"a": 1}'}, "finish_reason": "stop"}]
+    assert data["provider"] == "Google" and data["usage"] == USAGE and data["id"] == "gen-1"
+    error = {"code": 502, "message": "x"}
+    failed = extract.assemble([chunk(choices=[{"delta": {"content": "{"}}]), chunk(error=error)])
+    assert failed == {"error": error}
+
+
+def test_the_record_is_saved_after_every_call(tmp_path, pages):
+    saved = []
+    docs = extract.review_docs(pages, "PC0195-000")
+    extract.extract_one(FakePost(), extract.EXTRACTORS["a"], "PC0195-000", docs, save=saved.append)
+    assert [list(r["calls"]) for r in saved] == [list(GROUPS)[: i + 1] for i in range(4)]
+    assert all(r["error"] == "incomplete" for r in saved)
