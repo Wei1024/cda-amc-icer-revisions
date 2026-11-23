@@ -93,7 +93,9 @@ class IcerFields(_Strict):
     agency_icer_headline: float | None = Field(
         description="The figure the Recommendation leads with, only if it differs from agency_icer"
     )
-    comparator: str | None = Field(description="The one comparator both ICERs refer to (rule 1)")
+    comparator: str | None = Field(
+        description="The one comparator both ICERs refer to (rule 1): full name, generic names, no abbreviations"
+    )
     icer_type: Literal["probabilistic", "deterministic"] | None = Field(description="Rule 2")
     icer_type_mismatch: bool = Field(description="Sponsor and agency figures are of different types (rule 3)")
     icer_basis: Literal["pairwise", "sequential"] | None = Field(description="Rule 7")
@@ -125,7 +127,9 @@ class StepwiseFields(_Strict):
 class FeatureFields(_Strict):
     """Spec §2.4 submission features: only what the sponsor knew at submission, never the agency's judgement."""
 
-    pivotal_design: Literal["rct_h2h", "rct_placebo_or_other", "single_arm", "observational", "mixed", "unclear"]
+    pivotal_design: Literal[
+        "rct_vs_model_comparator", "rct_vs_other_control", "single_arm", "observational", "mixed", "unclear"
+    ] = Field(description="The trials the model's main comparison takes its efficacy from; see the spec's definition")
     comparison_method: Literal["direct", "itc_nma", "naive", "assumption", "unclear"] = Field(
         description="For the primary comparator only; an NMA run but not used in the model is 'naive'"
     )
@@ -139,7 +143,9 @@ class FeatureFields(_Strict):
     ]
     time_horizon_years: float | None = Field(description="Null for 'lifetime' with no years stated")
     lifetime_unspecified: bool = Field(description="Time horizon is 'lifetime' with no years stated")
-    followup_months: float | None = Field(description="Median follow-up of the data cut used in the model")
+    followup_months: float | None = Field(
+        description="Median follow-up, whole trial population, at the data cut the model uses; drug arm if only by arm"
+    )
     trial_duration_months: float | None = Field(description="Planned trial duration, if stated")
     os_median_reached_trt: bool | None = Field(description="Oncology only; null otherwise")
     treatment_specific_utilities: bool | None = Field(description="Only if stated explicitly")

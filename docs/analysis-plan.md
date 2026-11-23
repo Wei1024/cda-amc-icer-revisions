@@ -37,7 +37,7 @@ exp(β) > 1 against the reference level:
 |---|---|---|---|
 | H1 | `primary_endpoint_type` | `response_or_surrogate` vs `os` | 2.82× vs 1.51× |
 | H2 | `comparator_type` | `bsc_or_no_treatment` vs `active_drug` | 2.48× vs 1.60× |
-| H3 | `pivotal_design` | `single_arm` or `observational` vs `rct_h2h` | coded but not split in the pilot; from the literature |
+| H3 | `pivotal_design` | `single_arm` or `observational` vs `rct_vs_model_comparator` | coded but not split in the pilot; from the literature |
 
 - Each is tested with a two-sided 95% CI. With three hypotheses, p-values are also reported with a Holm correction.
 - H1 and H2 came from the pilot, whose reviews are part of the full cohort, so they are not independent tests. A

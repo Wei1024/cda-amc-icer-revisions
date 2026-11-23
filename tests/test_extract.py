@@ -55,7 +55,7 @@ RECORD = {
             "icer_note": "point",
         }
     ],
-    "pivotal_design": "rct_placebo_or_other",
+    "pivotal_design": "rct_vs_model_comparator",
     "comparison_method": "direct",
     "primary_endpoint_type": "pfs_or_efs",
     "comparator_type": "active_drug",
@@ -227,7 +227,7 @@ def test_extractor_ids_are_safe_folder_names():
     [
         (ok("features", finish="length"), "features: length"),
         (ok("features", finish="content_filter"), "features: content_filter"),
-        (ok("features", content='{"pivotal_design": "rct_h2h"}'), "features: invalid_output"),
+        (ok("features", content='{"pivotal_design": "rct_vs_model_comparator"}'), "features: invalid_output"),
         (fail(400, "context_length_exceeded"), "features: context_length_exceeded"),
         (fail(402), "features: http_402"),
         (fail(502, "provider_unavailable", status=200), "features: provider_unavailable"),  # error after headers
@@ -240,7 +240,7 @@ def test_a_failed_group_is_recorded_and_only_it_is_retried(tmp_path, pages, resp
     record = json.loads(extract.out_path(ex, "PC0195-000", out).read_text())
     assert record["extraction"] is None and record["calls"]["icers"]["error"] is None
     if error.endswith("invalid_output"):  # the rejected reply is kept, with what was wrong
-        assert record["calls"]["features"]["raw"] == '{"pivotal_design": "rct_h2h"}'
+        assert record["calls"]["features"]["raw"] == '{"pivotal_design": "rct_vs_model_comparator"}'
         assert "comparison_method: Field required" in record["calls"]["features"]["error"]
 
     retry = FakePost()

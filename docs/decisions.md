@@ -242,6 +242,32 @@ rules the spec leaves open: a price cut on a two-drug regimen (PC0330), recordin
 when there is no base case (SR0685), `mixed` designs, what counts as a resubmission, and pairwise versus
 sequential ICERs. Fix those rules before the precision check.
 
+### D21. Rules for the gaps the model comparison found
+**Decided** (2026-11-23), from the cases where Sonnet, Carbon and Hydrogen disagreed on the four test reviews
+([extraction-spec.md](extraction-spec.md)):
+- *Exploratory agency ICER* (rule 4): when the agency has no base case of its own, the exploratory figure and its
+  costs and QALYs are still recorded, with `no_reanalysis`; code keeps them out of the main ratio (SR0685).
+- *Price cut on a regimen* (new rule 16): always the cut for the drug under review alone; if none reaches the
+  threshold, `not_achievable`, with any all-drugs scenario in `notes` (PC0330).
+- *Trial design* (`pivotal_design`): coded from the trials the model's main comparison uses, and `mixed` only when
+  the model combines designs. `rct_h2h` and `rct_placebo_or_other` are renamed `rct_vs_model_comparator` and
+  `rct_vs_other_control`, since "placebo against best supportive care counts as head-to-head" confused models
+  (SR0685). The analysis plan's H3 refers to the new name; the hypothesis is unchanged.
+- *Resubmission*: CDA-AMC's own definition (Procedures for Reimbursement Reviews, sections 7.2, 8 and 9): the same
+  drug, previously reviewed for the same indication to a final recommendation; reassessments count too. New
+  combinations, formulations, lines and populations do not, and "Previously reviewed: Yes" in a report's tables
+  is not enough, as it covers other indications (PC0330).
+- *Treatment-specific utilities*: true if the report says so, false if it says utilities depend on the health
+  state only, null if it is silent.
+- *Follow-up*: the whole trial population at the model's data cut; the drug's arm only if that is all there is
+  (PC0330: 14.1 months overall, 14.2 in the drug's arm).
+- *Comparator names*: spelled out, generic names, every drug of a combination; code also matches names loosely
+  when the extractors are compared.
+**Why:** each gap made two careful models give different answers to the same page, so it would have counted as
+extractor disagreement in the precision check when it was really ambiguity in the rules.
+**Left to the precision check:** category coding of unusual stepped-analysis changes, and whether to code an ICER
+against the reference treatment as pairwise (rule 7).
+
 ## Ideas on hold
 
 - **Adding 2026 reviews.** Open.

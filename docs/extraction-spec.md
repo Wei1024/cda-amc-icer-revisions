@@ -139,7 +139,7 @@ mean nulls are expected, not that the extractor failed.
 | `agency_icer_status` | as above, plus `no_reanalysis`, `lower_bound` | |
 | `agency_icer_range_low`, `agency_icer_range_high` | number | Only if the agency gives a range |
 | `agency_icer_headline` | number | The figure the Recommendation leads with, only if it differs from `agency_icer` |
-| `comparator` | text | The one comparator both ICERs refer to: rule 1 |
+| `comparator` | text | The one comparator both ICERs refer to: rule 1. Its full name, spelled out, with generic drug names and every drug of a combination ("best supportive care", not "BSC"; "platinum-based chemotherapy (cisplatin or carboplatin plus vinorelbine, gemcitabine or pemetrexed)") |
 | `icer_type` | `probabilistic`, `deterministic` | Rule 2 |
 | `icer_type_mismatch` | bool | Rule 3 |
 | `icer_basis` | `pairwise`, `sequential` | Rule 7 |
@@ -210,17 +210,17 @@ Trial fields come from the clinical section of a combined report, or from the se
 
 | field | values | rule | pilot |
 |---|---|---|---|
-| `pivotal_design` | `rct_h2h`, `rct_placebo_or_other`, `single_arm`, `observational`, `mixed`, `unclear` | Placebo + backbone vs backbone alone counts as `rct_h2h`. Placebo vs best supportive care or watch-and-wait counts as `rct_h2h` | 60/60 |
+| `pivotal_design` | `rct_vs_model_comparator`, `rct_vs_other_control`, `single_arm`, `observational`, `mixed`, `unclear` | The design of the trials the economic model's main comparison takes its efficacy from. `rct_vs_model_comparator`: randomised against the comparator the model uses; placebo counts when the model's comparator is best supportive care, no treatment or watch-and-wait, and placebo + backbone vs backbone alone counts when the comparator is the backbone. `rct_vs_other_control`: randomised, but against something other than the model's comparator, so the model needs an indirect comparison. `mixed` only when the model combines designs for that comparison (e.g. an RCT for progression and a single-arm study for survival), not because other trials exist. Example, SR0685: several placebo-controlled trials and one against dupilumab; the model compares with best supportive care, so `rct_vs_model_comparator` | 60/60 |
 | `comparison_method` | `direct`, `itc_nma`, `naive`, `assumption`, `unclear` | For the primary comparator only. If the sponsor ran an NMA but the model uses a naive comparison, code `naive` | 60/60 |
 | `primary_endpoint_type` | `os`, `pfs_or_efs`, `response_or_surrogate`, `clinical_scale`, `other`, `unclear` | Co-primary OS + PFS → `os`. Response indices (IGA, HiSCR, SRI) → `clinical_scale`. Lab or biomarker response → `response_or_surrogate`. Composite event endpoints → `other` | 60/60 |
 | `comparator_type` | `active_drug`, `bsc_or_no_treatment`, `mixed_basket`, `unclear` | | 60/60 |
 | `n_comparators_sponsor` | int | | 58/60 |
 | `model_type` | `partitioned_survival`, `markov_or_state_transition`, `decision_tree`, `microsimulation`, `other`, `unclear` | Decision tree followed by Markov → `markov_or_state_transition` | 60/60 |
 | `time_horizon_years` | number | "Lifetime" with no years stated: null, and set `lifetime_unspecified = true` | 53/60 |
-| `followup_months` | number | Median follow-up only, from the data cut used in the model. Put trial duration in `trial_duration_months` | 32/60 |
+| `followup_months` | number | Median follow-up for the whole trial population, at the data cut the economic model uses (the economic report names the data cut; the figure is often in the clinical sections). If it is given only by arm, take the drug's arm and say so in `notes`. Example, PC0330: 14.1 months overall, not the 14.2 months of the drug's arm. Put trial duration in `trial_duration_months` | 32/60 |
 | `os_median_reached_trt` | bool | Oncology only; null otherwise | 23/60 |
-| `treatment_specific_utilities` | bool | Only if stated explicitly; expect many nulls | 13/60 |
-| `resubmission` | bool | True only if the same drug and indication was reviewed before ("previously reviewed: yes", or a resubmission label). Reconsideration of a draft recommendation is false | inconsistent |
+| `treatment_specific_utilities` | bool | True if the report says utility values differ by treatment within a health state; false if it says they depend on the health state only; null if it does not say. Expect many nulls | 13/60 |
+| `resubmission` | bool | True if the review is a resubmission or a reassessment as CDA-AMC defines them: the same drug, previously reviewed for the same indication (including line of therapy) to a final recommendation, now reviewed again with new evidence, a new price or revised conditions. A new combination, formulation, line or population is a new submission: false. "Previously reviewed: Yes" in the report's tables only means the drug was reviewed before, often for another indication (PC0330), so it is not enough. Reconsideration of a draft recommendation is false. Source: CDA-AMC Procedures for Reimbursement Reviews (August 2026), sections 7.2, 8 and 9 | inconsistent |
 
 **Prevalence (for `rare_disease`).** The LLM copies a number; the rare-disease flag is set in code (§4), so the
 definition is the same for every review. Reports flag rarity in no standard way, and a yes/no read from the text
@@ -251,7 +251,7 @@ Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare
 | `price_reduction_pct` | number | % cut needed to reach the threshold |
 | `price_reduction_qualifier` | `exact`, `at_least`, `greater_than`, `approximately`, `range` | For a range, record the lower end |
 | `price_reduction_band` | text | The band label, if the review gives one (from November 2025) |
-| `price_reduction_status` | `pct`, `band`, `not_needed`, `no_pct_specified`, `not_achievable`, `not_reported` | |
+| `price_reduction_status` | `pct`, `band`, `not_needed`, `no_pct_specified`, `not_achievable`, `not_reported` | For the drug under review alone: rule 16 |
 | `wtp_threshold` | number | Usually 50000; record it if different (e.g. 100000 in early 2020) |
 
 ### 2.6 On every record
@@ -275,7 +275,11 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
 3. **Types don't match.** If one side reports only one type, use what is reported and set
    `icer_type_mismatch = true`.
 4. **Scenarios are never a base case.**
-   - Agency reports only exploratory or scenario results: `ratio_status = no_reanalysis`.
+   - Agency reports only exploratory or scenario results, with no base case of its own (it says so, e.g. "could
+     not conduct a base-case reanalysis"): `agency_icer_status = no_reanalysis` and
+     `ratio_status = no_reanalysis`. Still record the exploratory figure in `agency_icer`, and its costs and QALYs
+     in `inc_cost_agency` and `inc_qaly_agency`; code keeps these reviews out of the main ratio and uses them only
+     in a sensitivity analysis. Example, SR0685: exploratory $48,616.
    - Agency gives a point estimate **and** a range: use the point estimate, and fill the range fields.
      Example, PC0195: sponsor $157,293; agency point $171,723, range $157,226–$370,710. The point gives a ratio
      of 1.09×; the top of the range would give 2.36×.
@@ -349,6 +353,15 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
     - `population`: who is modelled: the eligible population, subgroup, age or weight
     - `model_structure`: health states, transitions, cycle length, half-cycle correction
     - `other`: none of the above; say what in `notes`
+
+**The price reduction**
+
+16. **A regimen of several drugs.** The price cut is always for the drug under review alone. If the agency finds
+    that no cut to that drug's price reaches the threshold (even at 100%, other drugs in the regimen keep the
+    ICER above it), set `price_reduction_status = not_achievable` and leave `price_reduction_pct` null, even if
+    the agency also shows a scenario cutting the price of every drug in the regimen. Put that scenario in
+    `notes`. Example, PC0330: trifluridine-tipiracil plus bevacizumab; free trifluridine-tipiracil still gives
+    $69,721 per QALY, and 77% off both drugs reaches $50,000: `not_achievable`, with the 77% in `notes`.
 
 ## 4. Computed in code, not by the LLM
 
