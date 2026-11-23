@@ -220,8 +220,8 @@ Trial fields come from the clinical section of a combined report, or from the se
 | `model_type` | `partitioned_survival`, `markov_or_state_transition`, `decision_tree`, `microsimulation`, `other`, `unclear` | Decision tree followed by Markov → `markov_or_state_transition` | 60/60 |
 | `time_horizon_years` | number | "Lifetime" with no years stated: null, and set `lifetime_unspecified = true` | 53/60 |
 | `followup_months` | number | Median follow-up for the whole trial population, at the data cut the economic model uses (the economic report names the data cut; the figure is often in the clinical sections). If it is given only by arm, take the drug's arm and say so in `notes`. Example, PC0330: 14.1 months overall, not the 14.2 months of the drug's arm. Put trial duration in `trial_duration_months` | 32/60 |
-| `os_median_reached_trt` | bool | Oncology only; null otherwise | 23/60 |
-| `treatment_specific_utilities` | bool | True if the report says utility values differ by treatment within a health state; false if it says they depend on the health state only; null if it does not say. Expect many nulls | 13/60 |
+| `os_median_reached_trt` | bool | Oncology only; null otherwise. **True if the median overall survival was reached** (estimated) in the drug's arm at the data cut the model uses; false if it was not reached, including when overall survival is immature with too few deaths to estimate it. Example, PC0195: "The median OS was not reached in the ribociclib group" is false | 23/60 |
+| `treatment_specific_utilities` | bool | True if the report says utility values differ by treatment within a health state; false if it says they depend on the health state only, which includes a model described as using health-state utility values for all treatments (PC0330: "disutilities were assumed to be captured by the health state utility values"); null if the report does not say how utilities were assigned. Expect many nulls | 13/60 |
 | `resubmission` | bool | True if the review is a resubmission or a reassessment as CDA-AMC defines them: the same drug, previously reviewed for the same indication (including line of therapy) to a final recommendation, now reviewed again with new evidence, a new price or revised conditions. A new combination, formulation, line or population is a new submission: false. "Previously reviewed: Yes" in the report's tables only means the drug was reviewed before, often for another indication (PC0330), so it is not enough. Reconsideration of a draft recommendation is false. Source: CDA-AMC Procedures for Reimbursement Reviews (August 2026), sections 7.2, 8 and 9 | inconsistent |
 
 **Prevalence (for `rare_disease`).** The LLM copies a number; the rare-disease flag is set in code (§4), so the
@@ -253,7 +253,7 @@ Not extracted by the LLM (see §4): `stream`, `therapeutic_group`, `year`, `rare
 | `price_reduction_pct` | number | % cut needed to reach the threshold |
 | `price_reduction_qualifier` | `exact`, `at_least`, `greater_than`, `approximately`, `range` | For a range, record the lower end |
 | `price_reduction_band` | text | The band label, if the review gives one (from November 2025) |
-| `price_reduction_status` | `pct`, `band`, `not_needed`, `no_pct_specified`, `not_achievable`, `not_reported` | For the drug under review alone: rule 16 |
+| `price_reduction_status` | `pct`, `band`, `not_needed`, `no_pct_specified`, `not_achievable`, `not_reported` | For the drug under review alone, and the cut needed to reach the threshold: rules 16 and 17 |
 | `wtp_threshold` | number | Usually 50000; record it if different (e.g. 100000 in early 2020) |
 
 ### 2.6 On every record
@@ -373,6 +373,11 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
     the agency also shows a scenario cutting the price of every drug in the regimen. Put that scenario in
     `notes`. Example, PC0330: trifluridine-tipiracil plus bevacizumab; free trifluridine-tipiracil still gives
     $69,721 per QALY, and 77% off both drugs reaches $50,000: `not_achievable`, with the 77% in `notes`.
+17. **Already below the threshold.** The status describes the cut needed to reach the threshold in the agency's
+    base case. If that ICER is already at or below the threshold, set `price_reduction_status = not_needed` and
+    leave `price_reduction_pct` null, even if the Recommendation still asks for an unspecified price reduction
+    (for example "to reduce the uncertainty"); put that condition in `notes`. Example, PC0350: agency ICER
+    $37,154 against $50,000, and the Recommendation asks for a price reduction without a figure: `not_needed`.
 
 ## 4. Computed in code, not by the LLM
 

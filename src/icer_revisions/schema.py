@@ -147,8 +147,14 @@ class FeatureFields(_Strict):
         description="Median follow-up, whole trial population, at the data cut the model uses; drug arm if only by arm"
     )
     trial_duration_months: float | None = Field(description="Planned trial duration, if stated")
-    os_median_reached_trt: bool | None = Field(description="Oncology only; null otherwise")
-    treatment_specific_utilities: bool | None = Field(description="Only if stated explicitly")
+    os_median_reached_trt: bool | None = Field(
+        description="Oncology only, else null. True if median overall survival WAS reached (estimated) in the drug's "
+        "arm at the model's data cut; false if not reached, including when too few deaths are reported"
+    )
+    treatment_specific_utilities: bool | None = Field(
+        description="True if utilities differ by treatment within a health state; false if the model uses "
+        "health-state utility values for all treatments; null if the report does not say"
+    )
     resubmission: bool | None = Field(description="Same drug and indication reviewed before; reconsideration is not")
     prevalence_value: float | None = Field(description="As stated, before any conversion")
     prevalence_unit: Literal["per_100k", "per_10k", "per_million", "percent", "one_in_n", "patients"] | None
@@ -162,7 +168,9 @@ class PriceFields(_Strict):
     price_reduction_pct: float | None = Field(description="% cut needed to reach the threshold; lower end of a range")
     price_reduction_qualifier: Literal["exact", "at_least", "greater_than", "approximately", "range"] | None
     price_reduction_band: str | None = Field(description="The band label, if the review gives one")
-    price_reduction_status: Literal["pct", "band", "not_needed", "no_pct_specified", "not_achievable", "not_reported"]
+    price_reduction_status: Literal[
+        "pct", "band", "not_needed", "no_pct_specified", "not_achievable", "not_reported"
+    ] = Field(description="The cut to the drug under review needed to reach the threshold (rules 16, 17)")
     wtp_threshold: float | None = Field(description="Willingness-to-pay threshold, $/QALY; usually 50000")
 
 

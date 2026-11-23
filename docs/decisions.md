@@ -286,6 +286,12 @@ completed groups, and the stepped tables were identical. The remaining disagreem
 (Sonnet read it as "not reached"), `treatment_specific_utilities` (null against false where the report describes
 health-state utilities), PC0350's price status (no cut needed to reach the threshold, but the Recommendation asks
 for an unspecified one), one category, and a $2 rounding difference.
+**Then clarified**, since both models had read the same facts each time: `os_median_reached_trt` says that true
+means the median was reached (Sonnet had answered true while quoting "not reached"); new rule 17 makes the price
+status the cut needed to reach the threshold, so an agency ICER already below it is `not_needed` even when the
+Recommendation asks for an unspecified reduction (PC0350); and a model described as using health-state utility
+values for all treatments has `treatment_specific_utilities = false` (PC0330). The schema descriptions the model
+sees now carry these rules too.
 
 ## Ideas on hold
 
