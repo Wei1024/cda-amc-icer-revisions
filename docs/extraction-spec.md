@@ -91,7 +91,9 @@ are merged into one record. The calls are made one after another, through OpenRo
 - **The schema goes in the final message, not in `response_format`.** Providers treat an output schema as part
   of the prompt prefix, so a different schema per call would invalidate the cache. The reply is validated against
   the schema in code; an invalid reply fails that call and is left out of the conversation, and a re-run repeats
-  only the calls that failed, after the groups that succeeded.
+  only the calls that failed, after the groups that succeeded. A key the schema lacks is the one exception: a model
+  sometimes adds one (Hydrogen put a note beside a number on PC0195), so it is dropped and listed in the call's
+  `dropped_fields` rather than failing the call. Every field asked for is still checked.
 - **Why four groups.** Each call stays focused on related fields. The split began with Anthropic's limit of 16
   fields that may be null when a schema is enforced; with the schema in the prompt that limit no longer applies,
   and the stepped-analysis group now exceeds it (D17, D19).
@@ -293,7 +295,11 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
    List the others in `notes`.
 7. **Sequential or pairwise.** Prefer the pairwise ICER against the primary comparator when both sides report
    one. Otherwise use the sequential (fully incremental) ICER against the next comparator on the frontier, and
-   set `icer_basis = sequential`.
+   set `icer_basis = sequential`. Code `icer_basis` by what the ICER is compared with, not by how the table is
+   laid out: an ICER against the primary comparator is `pairwise` even when it comes from a sequential table,
+   because the drug sits right after the reference. Example, SR0685: upadacitinib 15 mg, $50,241 against best
+   supportive care in a sequential table, is `pairwise`; upadacitinib 30 mg, $267,678 against upadacitinib
+   15 mg, would be `sequential`.
 8. **Sponsor claims dominance** (cheaper and more effective) and the agency reports a positive ICER:
    `ratio_status = sponsor_dominant`. Still fill every other field; these reviews are used (§4).
 9. **Different comparators on the two sides** (e.g. abemaciclib, PC0400/PC0409):
@@ -342,7 +348,8 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
       parametric distribution, use of Kaplan-Meier data, cure assumptions
     - `treatment_effect`: the size of the drug's effect compared with the comparator: hazard ratios, response
       rates, which indirect comparison is used
-    - `treatment_effect_waning`: whether and when the drug's benefit fades over time
+    - `treatment_effect_waning`: whether and when the benefit of any treatment arm fades over time, the drug's
+      or the comparator's (SR0685: "durability of BSC response")
     - `utilities`: health-state utility values, utility decrements, adverse-event disutilities
     - `time_horizon`: the length of the model
     - `comparator`: which treatments are compared, or the mix of treatments in a comparator basket
@@ -352,7 +359,11 @@ Each rule came from a case in the pilot. The numbers are stable; other files ref
       end-of-life costs
     - `population`: who is modelled: the eligible population, subgroup, age or weight
     - `model_structure`: health states, transitions, cycle length, half-cycle correction
-    - `other`: none of the above; say what in `notes`
+    - `other`: none of the above, including changes to background or concomitant therapy given in both arms
+      (SR0685: "UPA and DUP used in combination with TCS"); say what in `notes`
+    - A row with several changes (`multiple_changes = true`) takes the category of the change named first.
+      Example, PC0195: "Replacing the cost and utility associated decreased leukocyte count" names the cost
+      first, so `other_costs`
 
 **The price reduction**
 

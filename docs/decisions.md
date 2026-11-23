@@ -268,6 +268,25 @@ extractor disagreement in the precision check when it was really ambiguity in th
 **Left to the precision check:** category coding of unusual stepped-analysis changes, and whether to code an ICER
 against the reference treatment as pairwise (rule 7).
 
+### D22. Pairwise by comparator, two category clarifications, and lenient extra keys
+**Decided** (2026-11-23):
+- *Rule 7:* `icer_basis` follows what the ICER is compared with, not the table's layout: an ICER against the
+  primary comparator is `pairwise` even in a sequential table (SR0685, upadacitinib 15 mg against best supportive
+  care). Otherwise the sensitivity analysis that drops sequential ICERs would drop it for nothing.
+- *Rule 15:* `treatment_effect_waning` covers any arm's benefit fading, the comparator's too; background or
+  concomitant therapy in both arms is `other`; a row with several changes takes the first one named (PC0195).
+- *Extra keys:* a reply with a key the schema lacks is accepted, the key dropped and listed in `dropped_fields`,
+  and the prompt now says to use only the schema's keys. Hydrogen added one on PC0195 and Carbon one on PC0350;
+  each failure cost a repeat and broke Gemini's cache for the next call.
+- *Stalled connections:* given up after 2 minutes without data rather than 5, since OpenRouter sends keep-alive
+  comments while the model thinks (one stalled call on SR0685 cost five minutes).
+**Rerun on the four reviews with Sonnet and Hydrogen (rules of D21 and the first two points above):** the four key
+fields agreed 12 of 12, all fields 138 of 144 on the three complete reviews and 40 of 41 on PC0195's three
+completed groups, and the stepped tables were identical. The remaining disagreements were `os_median_reached_trt`
+(Sonnet read it as "not reached"), `treatment_specific_utilities` (null against false where the report describes
+health-state utilities), PC0350's price status (no cut needed to reach the threshold, but the Recommendation asks
+for an unspecified one), one category, and a $2 rounding difference.
+
 ## Ideas on hold
 
 - **Adding 2026 reviews.** Open.

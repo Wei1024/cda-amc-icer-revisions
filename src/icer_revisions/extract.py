@@ -42,7 +42,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from . import config
 from .schema import GROUPS, merge
@@ -84,8 +84,9 @@ def _group_prompt(group: str) -> str:
     return (
         f"Fill the `{group}` fields (spec {SECTIONS[group]}): {fields}. "
         "Give evidence and notes for these fields only.\n"
-        "Your reply is one JSON object holding these values, with no other text. This JSON schema describes the "
-        f"object; do not repeat the schema itself:\n{schema}"
+        "Your reply is one JSON object holding these values, with no other text. Use only the keys in this JSON "
+        "schema and add none of your own; put any comment in `notes`. The schema describes the object; do not "
+        f"repeat the schema itself:\n{schema}"
     )
 
 
@@ -207,7 +208,7 @@ def assemble(lines) -> dict:
     return out
 
 
-def http_post(key: str, stall: float = 300) -> Post:
+def http_post(key: str, stall: float = 120) -> Post:
     """POST a streamed request; `stall` is the most seconds to wait with no bytes at all from the server."""
     session = requests.Session()
     session.headers.update({"Authorization": f"Bearer {key}", "X-OpenRouter-Title": "icer-revisions"})
@@ -295,14 +296,33 @@ def call_group(
     first_error = None
     for text in _json_objects(content):
         try:
-            parsed = GROUPS[group].model_validate_json(text)
+            parsed, dropped = _validate(group, text)
             break
         except ValidationError as e:
             first_error = first_error or e
     else:
         problems = "; ".join(f"{'.'.join(map(str, d['loc']))}: {d['msg']}" for d in first_error.errors()[:5])
         return call | {"error": f"invalid_output: {problems}"[:500], "output": None, "raw": content}
-    return call | {"error": None, "output": parsed.model_dump(mode="json")}
+    return call | {"error": None, "output": parsed.model_dump(mode="json"), "dropped_fields": dropped}
+
+
+def _validate(group: str, text: str) -> tuple[BaseModel, list[str]]:
+    """The reply validated against the group's schema. Keys the schema does not have are dropped and listed, since
+    a model sometimes adds one (e.g. a note beside a number); anything else wrong still fails the call."""
+    try:
+        return GROUPS[group].model_validate_json(text), []
+    except ValidationError as e:
+        if any(d["type"] != "extra_forbidden" for d in e.errors()):
+            raise
+        data, dropped = json.loads(text), []
+        for d in e.errors():
+            *path, key = d["loc"]
+            parent = data
+            for step in path:
+                parent = parent[step]
+            parent.pop(key, None)
+            dropped.append(".".join(map(str, d["loc"])))
+        return GROUPS[group].model_validate(data), dropped
 
 
 def extract_one(

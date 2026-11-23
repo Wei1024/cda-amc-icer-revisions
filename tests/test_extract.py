@@ -294,3 +294,20 @@ def test_the_record_is_saved_after_every_call(tmp_path, pages):
     extract.extract_one(FakePost(), extract.EXTRACTORS["a"], "PC0195-000", docs, save=saved.append)
     assert [list(r["calls"]) for r in saved] == [list(GROUPS)[: i + 1] for i in range(4)]
     assert all(r["error"] == "incomplete" for r in saved)
+
+
+def test_keys_the_schema_lacks_are_dropped_and_recorded(tmp_path, pages):
+    reply = json.loads(ok("stepwise")[1]["choices"][0]["message"]["content"])
+    reply["rows"][0]["cost_comparator_note"] = "as printed"  # what Hydrogen added on PC0195
+    reply["table_note"] = "extra"
+    post = FakePost(stepwise=[ok("stepwise", content=json.dumps(reply))])
+    ex, cohort, out = extract.EXTRACTORS["a"], pd.DataFrame({"project": ["PC0195-000"]}), tmp_path / "out"
+    assert extract.run(cohort, ex, pages_dir=pages, out_dir=out, post=post).status.tolist() == ["ok"]
+    call = json.loads(extract.out_path(ex, "PC0195-000", out).read_text())["calls"]["stepwise"]
+    assert sorted(call["dropped_fields"]) == ["rows.0.cost_comparator_note", "table_note"]
+    assert "cost_comparator_note" not in call["output"]["rows"][0]
+    # anything else wrong still fails the call
+    reply["rows"][0]["icer_note"] = "great"
+    post = FakePost(stepwise=[ok("stepwise", content=json.dumps(reply))])
+    status = extract.run(cohort, ex, pages_dir=pages, out_dir=tmp_path / "out2", post=post).status.item()
+    assert status.startswith("stepwise: invalid_output")
